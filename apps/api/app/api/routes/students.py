@@ -1,6 +1,8 @@
+from io import BytesIO
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, File, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,6 +61,68 @@ async def list_students(
     )
     items = [StudentRow(**row) for row in rows]
     return PaginatedResponse.build(items, page, page_size, total)
+
+
+@router.get("/export", summary="Export students as Excel")
+async def export_students(
+    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> StreamingResponse:
+    from openpyxl import Workbook
+
+    rows, _ = await StudentService(db).list(page=1, page_size=100000)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Students"
+    ws.append(["Roll Number", "Name", "Email", "Phone", "Department", "Semester", "Section", "Status"])
+    for r in rows:
+        ws.append([
+            r["rollNumber"],
+            r["name"],
+            r["email"],
+            r.get("phone") or "",
+            r["department"]["name"] if r["department"] else "",
+            r["semester"]["name"] if r["semester"] else "",
+            r["section"]["name"] if r["section"] else "",
+            "Active" if r["isActive"] else "Inactive",
+        ])
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="students.xlsx"'},
+    )
+
+
+@router.post("/import", response_model=dict, summary="Import students from Excel (with validation)")
+async def import_students(
+    request: Request,
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file: Annotated[UploadFile, File(...)],
+) -> dict:
+    from app.services.imports import import_students_from_excel
+
+    content = await file.read()
+    result = await import_students_from_excel(db, BytesIO(content))
+    await AuditService.log(
+        db,
+        actor=actor,
+        request=request,
+        action="student.import",
+        entity_type="student",
+        new_value={"total": result.total, "imported": result.imported, "failed": result.failed},
+    )
+    await db.commit()
+    return {
+        "total": result.total,
+        "imported": result.imported,
+        "failed": result.failed,
+        "errors": result.errors[:100],
+    }
 
 
 @router.get("/{student_id}", response_model=StudentRow, summary="Student detail")
