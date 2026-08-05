@@ -1,0 +1,28 @@
+# Frontend Dockerfile for Vercel-compatible build
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/ui/package.json ./packages/ui/
+COPY packages/types/package.json ./packages/types/
+COPY packages/utils/package.json ./packages/utils/
+
+RUN corepack enable pnpm && pnpm install --frozen-lockfile --filter @examshield/web...
+
+COPY . .
+RUN pnpm --filter @examshield/web build
+
+# Production image
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/apps/web/next.config.ts ./
+COPY --from=builder /app/apps/web/public ./public
+COPY --from=builder /app/apps/web/.next/standalone ./
+COPY --from=builder /app/apps/web/.next/static ./.next/static
+
+EXPOSE 3000
+CMD ["node", "server.js"]

@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: '20'
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: |
+          cd apps/api
+          python -m pip install -q ruff mypy
+          ruff check .
+          mypy app
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: examshield
+          POSTGRES_PASSWORD: examshield_test
+          POSTGRES_DB: examshield
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: |
+          cd apps/api
+          python -m venv .venv
+          .venv/bin/pip install -q -e ".[dev]"
+      - run: |
+          cd apps/api
+          .venv/bin/python -m alembic upgrade head
+      - run: |
+          cd apps/api
+          .venv/bin/python -m pytest tests/ -q --tb=short
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    needs: lint-and-typecheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+    needs: [frontend-build, backend-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: |
+          cd apps/api
+          python -m venv .venv
+          .venv/bin/pip install -q -e ".[dev]"
+          .venv/bin/python -m alembic upgrade head
+          .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+      - run: |
+          cd apps/web
+          pnpm install --frozen-lockfile
+          pnpm dev &
+      - run: sleep 15
+      - run: |
+          npx playwright install --with-deps chromium
+          npx playwright test --project=chromium
+    if: always()
+    env:
+      PLAYWRIGHT_BASE_URL: http://localhost:3000

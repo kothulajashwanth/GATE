@@ -44,4 +44,23 @@ examshield-ai/
 └── .github/          # CI workflows
 ```
 
-Full documentation: [`docs/README.md`](docs/README.md).
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [Architecture](docs/README.md) | System overview, data flow |
+| [ER Diagram](database/ERD.md) | Database schema with Mermaid |
+| [Clerk Setup](docs/clerk-setup.md) | Auth provider configuration |
+| [Deployment](docs/deployment.md) | Production deploy to Railway/Vercel/Supabase |
+| [Developer Guide](docs/developer-guide.md) | Project structure, patterns, commands |
+
+## Tech Stack
+
+- **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS, shadcn/ui, TanStack Query
+- **Backend**: FastAPI, Python 3.12, SQLAlchemy 2.0, Alembic, Redis
+- **Database**: PostgreSQL 17 (Supabase), Redis 7
+- **Auth**: Clerk (JWT, webhooks, single-session)
+- **AI**: OpenAI GPT / Google Gemini (provider abstraction)
+- **Storage**: S3-compatible (MinIO dev, Supabase Storage prod)
+- **Email**: Resend
+- **CI/CD**: GitHub Actions, Docker, Railway, Vercel
