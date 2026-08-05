@@ -6,7 +6,7 @@
   "packageManager": "pnpm@11.18.0",
   "scripts": {
     "dev": "npx pnpm --filter @examshield/web dev",
-    "build": "npx pnpm -r build",
+    "build": "npx pnpm --filter @examshield/web build",
     "lint": "npx pnpm -r lint",
     "typecheck": "npx pnpm -r typecheck",
     "test": "npx pnpm -r test",
@@ -20,6 +20,7 @@
     "node": ">=20"
   },
   "devDependencies": {
+    "next": "^16.3.0",
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.6.11"
   }
