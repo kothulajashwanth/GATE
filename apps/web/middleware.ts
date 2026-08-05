@@ -24,22 +24,30 @@ const isAdmin = createRouteMatcher(['/admin(.*)']);
 const isStudent = createRouteMatcher(['/student(.*)', '/exam(.*)']);
 const isFaculty = createRouteMatcher(['/faculty(.*)']);
 
+interface SessionClaims {
+  metadata?: {
+    role?: string;
+  };
+}
+
 export default clerkMiddleware(async (auth, req) => {
   const { userId, sessionClaims, redirectToSignIn } = await auth();
 
   if (!isPublic(req)) {
     if (!userId) return redirectToSignIn({ returnBackUrl: req.url });
 
-    const role = sessionClaims?.metadata?.role as string | undefined;
+    const claims = sessionClaims as SessionClaims | undefined;
+    const role = claims?.metadata?.role;
+    const home = (role && ROLE_HOME[role]) || '/';
 
     if (isAdmin(req) && role !== 'admin' && role !== 'super_admin') {
-      return NextResponse.redirect(new URL(ROLE_HOME[role] ?? '/', req.url));
+      return NextResponse.redirect(new URL(home, req.url));
     }
     if (isStudent(req) && role !== 'student') {
-      return NextResponse.redirect(new URL(ROLE_HOME[role] ?? '/', req.url));
+      return NextResponse.redirect(new URL(home, req.url));
     }
     if (isFaculty(req) && role !== 'faculty') {
-      return NextResponse.redirect(new URL(ROLE_HOME[role] ?? '/', req.url));
+      return NextResponse.redirect(new URL(home, req.url));
     }
   }
 

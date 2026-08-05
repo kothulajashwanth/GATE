@@ -1,5 +1,7 @@
 'use client';
 
+'use client';
+
 import { useState } from 'react';
 import {
   Card, CardContent, CardHeader, CardTitle, Button, Input, Badge,

@@ -37,7 +37,9 @@ export function createClient(opts: ClientOptions = {}) {
 
   function isExpired(jwt: string): boolean {
     try {
-      const payload = JSON.parse(atob(jwt.split('.')[1]));
+      const parts = jwt.split('.');
+      if (parts.length < 3) return true;
+      const payload = JSON.parse(atob(parts[1]!));
       return Date.now() >= payload.exp * 1000;
     } catch {
       return true;

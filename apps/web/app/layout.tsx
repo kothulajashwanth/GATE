@@ -5,6 +5,8 @@ import { Providers } from '@/providers';
 import { APP_NAME } from '@/lib/constants';
 import './globals.css';
 
+export const dynamic = 'force-dynamic';
+
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
 export const metadata: Metadata = {

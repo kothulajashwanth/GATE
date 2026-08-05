@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/page-header';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/client-provider';
 import { formatDate } from '@examshield/utils';
+import { Paginated } from '@examshield/types';
 
 interface StatCardProps {
   title: string;
@@ -40,10 +41,10 @@ export default function AdminDashboard() {
     queryKey: ['admin', 'stats'],
     queryFn: async () => {
       const [students, exams, questions, sessions] = await Promise.all([
-        api.get('/students', { page_size: 1, page: 1 }),
-        api.get('/exams', { page_size: 1, page: 1 }),
-        api.get('/questions', { page_size: 1, page: 1 }),
-        api.get('/exam-sessions', { page_size: 1, page: 1 }),
+        api.get<Paginated<unknown>>('/students', { page_size: 1, page: 1 }),
+        api.get<Paginated<unknown>>('/exams', { page_size: 1, page: 1 }),
+        api.get<Paginated<unknown>>('/questions', { page_size: 1, page: 1 }),
+        api.get<Paginated<unknown>>('/exam-sessions', { page_size: 1, page: 1 }),
       ]);
       return {
         totalStudents: students.total,

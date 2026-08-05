@@ -8,6 +8,7 @@ import { useApiClient } from '@/lib/api/client-provider';
 import { formatDateTime, formatDuration } from '@examshield/utils';
 import { Button } from '@examshield/ui';
 import Link from 'next/link';
+import { Paginated } from '@examshield/types';
 
 interface ExamPreview {
   id: string;
@@ -16,6 +17,15 @@ interface ExamPreview {
   startAt: string;
   endAt: string;
   durationMinutes: number;
+  status: string;
+}
+
+interface ResultRow {
+  id: string;
+  examId: string;
+  percentage: number | null;
+  rank: number | null;
+  isPassed: boolean | null;
   status: string;
 }
 
@@ -91,14 +101,16 @@ export default function StudentDashboard() {
     queryKey: ['student', 'stats'],
     queryFn: async () => {
       const [upcoming, completed, results] = await Promise.all([
-        api.get('/student/exams/upcoming', { page_size: 5 }),
-        api.get('/student/exams/completed', { page_size: 5 }),
-        api.get('/student/results', { page_size: 5 }),
+        api.get<Paginated<ExamPreview>>('/student/exams/upcoming', { page_size: 5 }),
+        api.get<Paginated<ExamPreview>>('/student/exams/completed', { page_size: 5 }),
+        api.get<Paginated<ResultRow>>('/student/results', { page_size: 5 }),
       ]);
       return {
         upcomingCount: upcoming.total,
         completedCount: completed.total,
-        averageScore: results.items.length ? Math.round(results.items.reduce((a: number, r: any) => a + (r.percentage || 0), 0) / results.items.length) : 0,
+        averageScore: results.items.length
+          ? Math.round(results.items.reduce((a: number, r: ResultRow) => a + (r.percentage || 0), 0) / results.items.length)
+          : 0,
         rank: results.items[0]?.rank ?? null,
       };
     },
@@ -106,7 +118,7 @@ export default function StudentDashboard() {
 
   const { data: upcoming, isLoading: examsLoading } = useQuery({
     queryKey: ['student', 'exams', 'upcoming'],
-    queryFn: () => api.get('/student/exams/upcoming', { page_size: 4 }),
+    queryFn: () => api.get<Paginated<ExamPreview>>('/student/exams/upcoming', { page_size: 4 }),
   });
 
   return (

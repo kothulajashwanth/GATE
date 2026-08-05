@@ -1,3 +1,5 @@
+'use client';
+
 import { FolderKanban, BookOpen, Tag, Brain, Wand2, FileText, Download, Upload, Search, Filter, Plus, ChevronRight, MoreHorizontal, Eye, Edit, Copy, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import {
@@ -18,6 +20,7 @@ import { toast } from 'sonner';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { Paginated } from '@examshield/types';
 
 const questionTypes = ['mcq', 'true_false', 'fill_blank', 'paragraph', 'coding', 'image_based', 'multi_select'] as const;
 const difficulties = ['easy', 'medium', 'hard'] as const;
@@ -51,25 +54,39 @@ const questionSchema = z.object({
   difficulty: z.enum(difficulties),
   bloomLevel: z.enum(bloomLevels).optional(),
   tags: z.array(z.string()).default([]),
-  marks: z.number().default(1).min(1),
+  marks: z.number().min(1).default(1),
   negativeMarks: z.number().default(0),
   topic: z.string().optional(),
   subjectId: z.string().optional(),
   folderId: z.string().optional(),
   isVerified: z.boolean().default(false),
-});
+}).strict();
 type QuestionForm = z.infer<typeof questionSchema>;
 
 function CreateQuestionDialog({ onCreated }: { onCreated: () => void }) {
   const api = useApiClient();
   const { register, handleSubmit, watch, formState: { errors } } = useForm<QuestionForm>({
-    resolver: zodResolver(questionSchema),
-    defaultValues: { type: 'mcq', difficulty: 'medium', marks: 1, tags: [], isVerified: false },
+    resolver: zodResolver(questionSchema) as any,
+    defaultValues: {
+      type: 'mcq',
+      difficulty: 'medium',
+      marks: 1,
+      tags: [],
+      isVerified: false,
+      negativeMarks: 0,
+      correctAnswers: [],
+    },
   });
   const [open, setOpen] = useState(false);
 
-  const { data: subjects } = useQuery({ queryKey: ['subjects'], queryFn: () => api.get('/subjects') });
-  const { data: folders } = useQuery({ queryKey: ['folders'], queryFn: () => api.get('/question-bank-folders') });
+  const { data: subjects } = useQuery({
+    queryKey: ['subjects'],
+    queryFn: () => api.get<{ id: string; name: string }[]>('/question-bank/subjects'),
+  });
+  const { data: folders } = useQuery({
+    queryKey: ['folders'],
+    queryFn: () => api.get<{ id: string; name: string }[]>('/question-bank/folders'),
+  });
 
   const mutation = useMutation({
     mutationFn: (values: QuestionForm) => api.post('/questions', values),
@@ -112,7 +129,10 @@ function CreateQuestionDialog({ onCreated }: { onCreated: () => void }) {
             <div className="space-y-2">
               <Label>Options (one per line)</Label>
               <Textarea
-                {...register('options', { valueAsArray: (v) => v.split('\n').map(s => s.trim()).filter(Boolean) })}
+                onBlur={(e) => {
+                  const value = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
+                  register('options').onChange({ target: { value } });
+                }}
                 rows={4}
                 placeholder="Option A\nOption B\nOption C\nOption D"
               />
@@ -122,7 +142,10 @@ function CreateQuestionDialog({ onCreated }: { onCreated: () => void }) {
           <div className="space-y-2">
             <Label>Correct Answer(s)</Label>
             <Textarea
-              {...register('correctAnswers', { valueAsArray: (v) => v.split('\n').map(s => s.trim()).filter(Boolean) })}
+              onBlur={(e) => {
+                const value = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
+                register('correctAnswers').onChange({ target: { value } });
+              }}
               rows={3}
               placeholder={needsOptions ? 'A\nC' : 'true'}
             />
@@ -174,7 +197,13 @@ function CreateQuestionDialog({ onCreated }: { onCreated: () => void }) {
 
           <div className="space-y-2">
             <Label>Tags (comma-separated)</Label>
-            <Input {...register('tags', { valueAsArray: (v) => v.split(',').map(s => s.trim()).filter(Boolean) })} placeholder="arrays, sorting, easy" />
+            <Input
+              onBlur={(e) => {
+                const value = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                register('tags').onChange({ target: { value } });
+              }}
+              placeholder="arrays, sorting, easy"
+            />
           </div>
 
           <DialogFooter>
@@ -204,7 +233,7 @@ export default function QuestionsPage() {
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['questions', params],
-    queryFn: () => api.get('/questions', params),
+    queryFn: () => api.get<Paginated<QuestionRow>>('/questions', params),
   });
 
   const deleteQuestion = useMutation({
