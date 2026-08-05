@@ -1,0 +1,95 @@
+from datetime import UTC, datetime
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.core.auth import require_roles
+from app.core.errors import NotFoundError
+from app.db.models.exam import Exam, ExamSchedule, ExamStatus
+from app.db.models.session import ExamSession, SessionStatus
+from app.db.models.student import Student
+from app.db.models.user import Role, User
+from app.db.session import get_db
+from app.schemas.pagination import PaginatedResponse
+
+router = APIRouter()
+
+
+def _exam_preview(exam: Exam) -> dict:
+    return {
+        "id": str(exam.id),
+        "title": exam.title,
+        "subject": {"name": exam.subject.name} if exam.subject else None,
+        "startAt": exam.start_at.isoformat(),
+        "endAt": exam.end_at.isoformat(),
+        "durationMinutes": exam.duration_minutes,
+        "status": exam.status.value,
+    }
+
+
+async def _student_or_404(db: AsyncSession, user_id) -> Student:
+    result = await db.execute(select(Student).where(Student.user_id == user_id))
+    student = result.scalar_one_or_none()
+    if student is None:
+        raise NotFoundError("Student profile not found. Contact administration.")
+    return student
+
+
+@router.get("/upcoming", response_model=PaginatedResponse[dict], summary="Student upcoming exams")
+async def student_upcoming_exams(
+    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = 1,
+    page_size: int = 20,
+) -> PaginatedResponse[dict]:
+    now = datetime.now(UTC)
+    student = await _student_or_404(db, user.id)
+
+    base = (
+        select(Exam)
+        .join(ExamSchedule, ExamSchedule.exam_id == Exam.id)
+        .where(
+            ExamSchedule.department_id == student.department_id,
+            ExamSchedule.semester_id == student.semester_id,
+            ExamSchedule.section_id == student.section_id,
+            Exam.end_at > now,
+            Exam.status == ExamStatus.PUBLISHED,
+            Exam.deleted_at.is_(None),
+        )
+        .distinct()
+        .order_by(Exam.start_at)
+    )
+    total = int((await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one())
+    result = await db.execute(base.limit(page_size).offset((page - 1) * page_size))
+    items = [_exam_preview(e) for e in result.scalars().all()]
+    total_pages = (total + page_size - 1) // page_size if total else 0
+    return PaginatedResponse(items=items, page=page, pageSize=page_size, total=total, totalPages=total_pages)
+
+
+@router.get("/completed", response_model=PaginatedResponse[dict], summary="Student completed exams")
+async def student_completed_exams(
+    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = 1,
+    page_size: int = 20,
+) -> PaginatedResponse[dict]:
+    student = await _student_or_404(db, user.id)
+    base = (
+        select(Exam)
+        .join(ExamSession, ExamSession.exam_id == Exam.id)
+        .where(
+            ExamSession.student_id == student.id,
+            ExamSession.status.in_([SessionStatus.SUBMITTED, SessionStatus.EXPIRED]),
+            Exam.deleted_at.is_(None),
+        )
+        .distinct()
+        .order_by(Exam.end_at.desc())
+    )
+    total = int((await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one())
+    result = await db.execute(base.limit(page_size).offset((page - 1) * page_size))
+    items = [_exam_preview(e) for e in result.scalars().all()]
+    total_pages = (total + page_size - 1) // page_size if total else 0
+    return PaginatedResponse(items=items, page=page, pageSize=page_size, total=total, totalPages=total_pages)
