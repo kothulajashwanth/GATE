@@ -72,6 +72,36 @@ class Subject(Base, TimestampMixin, SoftDeleteMixin):
     department = relationship("Department")
 
 
+class UploadedFile(Base, TimestampMixin):
+    """File uploaded to Question Repository (PDF, DOCX, TXT, Excel)."""
+
+    __tablename__ = "uploaded_files"
+
+    id: Mapped[object] = guid_pk()
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    storage_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="processing", nullable=False)  # parsed, processing, failed
+    uploaded_by: Mapped[object] = mapped_column(guid(), ForeignKey("users.id"), nullable=False)
+    questions_found: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    ocr_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class FailedQuestion(Base, TimestampMixin):
+    """Queue for questions that failed validation pipeline."""
+
+    __tablename__ = "failed_questions"
+
+    id: Mapped[object] = guid_pk()
+    source_file_id: Mapped[object] = mapped_column(
+        guid(), ForeignKey("uploaded_files.id", ondelete="CASCADE"), nullable=False
+    )
+    raw_data: Mapped[dict] = mapped_column(JSON, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class Question(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "questions"
 
@@ -107,6 +137,7 @@ class Question(Base, TimestampMixin, SoftDeleteMixin):
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_ai_generated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_public: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     # source tracking for AI improvements
     derived_from_id: Mapped[object | None] = mapped_column(

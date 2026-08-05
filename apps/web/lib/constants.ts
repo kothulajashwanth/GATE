@@ -4,8 +4,11 @@ export const APP_NAME = 'ExamShield AI';
 
 export const ROUTES = {
   home: '/',
+  login: '/login',
+  adminLogin: '/portal/admin/login',
   signIn: '/sign-in',
   signUp: '/sign-up',
+  accessDenied: '/access-denied',
   admin: '/admin',
   student: '/student',
   exam: '/exam',
@@ -16,7 +19,6 @@ export const ROLE_ROUTES: Record<string, string[]> = {
   super_admin: ['/admin'],
   admin: ['/admin'],
   student: ['/student', '/exam'],
-  faculty: ['/faculty'],
 } as const;
 
 /** Redirect target after sign-in per role. */
@@ -24,7 +26,6 @@ export const ROLE_HOME: Record<string, string> = {
   super_admin: '/admin',
   admin: '/admin',
   student: '/student',
-  faculty: '/faculty',
 } as const;
 
 export const DEFAULT_HOME = '/student';

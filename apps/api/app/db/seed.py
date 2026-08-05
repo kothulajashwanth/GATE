@@ -25,11 +25,11 @@ from app.db.session import AsyncSessionLocal
 async def seed() -> None:
     async with AsyncSessionLocal() as db:
         # --- Users ---
-        result = await db.execute(select(User).where(User.email == "admin@examshield.local"))
+        result = await db.execute(select(User).where(User.email == "kothulajashwanth@gmail.com"))
         admin = result.scalar_one_or_none()
         if admin is None:
             admin = User(
-                email="admin@examshield.local",
+                email="kothulajashwanth@gmail.com",
                 first_name="Admin",
                 last_name="User",
                 role=Role.ADMIN,
