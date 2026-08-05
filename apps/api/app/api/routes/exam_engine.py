@@ -230,5 +230,12 @@ async def submit(
     session = await _session_or_404(db, session_id)
     engine = ExamEngine(db)
     session = await engine.submit(session)
+
+    # auto-evaluate objective questions; subjective flagged for manual review
+    from app.services.results import ResultCalculator
+
+    calc = ResultCalculator(db)
+    await calc.evaluate_session(session)
+    await calc.compute_ranks(str(session.exam_id))
     await db.commit()
-    return {"status": session.status.value, "submitted": True}
+    return {"status": session.status.value, "submitted": True, "evaluated": True}

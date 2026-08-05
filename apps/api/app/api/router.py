@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routes import academic, ai, auth, exam_engine, exams, health, question_bank, questions, results, sessions, student_exams, students, users, webhooks
+from app.api.routes import academic, ai, analytics, auth, exam_engine, exams, health, question_bank, questions, results, sessions, student_exams, students, users, webhooks
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -11,6 +11,7 @@ api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(exams.router, prefix="/exams", tags=["exams"])
 api_router.include_router(exam_engine.router, prefix="/exam-session", tags=["exam-engine"])
 api_router.include_router(ai.router, prefix="/ai", tags=["ai"])
+api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
 api_router.include_router(student_exams.router, prefix="/student/exams", tags=["student-exams"])
 api_router.include_router(results.router, prefix="/student/results", tags=["student-results"])
 api_router.include_router(question_bank.router, prefix="/question-bank", tags=["question-bank"])
