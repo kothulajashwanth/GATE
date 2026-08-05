@@ -1,0 +1,26 @@
+{
+  "name": "examshield-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ExamShield AI - Enterprise Secure Online Examination Management System",
+  "packageManager": "pnpm@11.18.0",
+  "scripts": {
+    "dev": "pnpm --filter @examshield/web dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "api:dev": "cd apps/api && uvicorn app.main:app --reload --port 8000",
+    "db:up": "docker compose up -d postgres redis",
+    "db:down": "docker compose down"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "prettier": "^3.5.3",
+    "prettier-plugin-tailwindcss": "^0.6.11"
+  }
+}

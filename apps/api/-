@@ -1,0 +1,10 @@
+F821 Undefined name `Any`
+  --> app\db\models\base.py:12:15
+   |
+12 | def guid() -> Any:
+   |               ^^^
+13 |     """UUID primary key column: native UUID on Postgres, CHAR(32) elsewhere (tests)."""
+14 |     return Uuid(as_uuid=True)
+   |
+
+Found 1 error.

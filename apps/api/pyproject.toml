@@ -1,0 +1,54 @@
+[project]
+name = "examshield-api"
+version = "0.1.0"
+description = "ExamShield AI - secure online examination management API"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "redis>=5.2",
+    "cryptography>=44",
+    "email-validator>=2.2",
+    "python-multipart>=0.0.20",
+    "openpyxl>=3.1",
+    "reportlab>=4.2",
+    "httpx>=0.28",
+    "tenacity>=9",
+    "python-jose[cryptography]>=3.3",
+    "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "aiosqlite>=0.20",
+    "ruff>=0.8",
+    "mypy>=1.14",
+]
+
+[tool.uvicorn]
+port = 8000
+reload = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

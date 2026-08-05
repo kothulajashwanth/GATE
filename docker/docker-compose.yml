@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: examshield-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: examshield
+      POSTGRES_PASSWORD: examshield_dev
+      POSTGRES_DB: examshield
+    ports:
+      - '5432:5432'
+    volumes:
+      - examshield_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U examshield -d examshield']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: examshield-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - examshield_redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: examshield-minio
+    restart: unless-stopped
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: examshield
+      MINIO_ROOT_PASSWORD: examshield_dev
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - examshield_miniodata:/data
+
+volumes:
+  examshield_pgdata:
+  examshield_redisdata:
+  examshield_miniodata:

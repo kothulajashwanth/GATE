@@ -1,0 +1,9 @@
+node_modules/
+.next/
+dist/
+build/
+.venv/
+__pycache__/
+package-lock.json
+pnpm-lock.yaml
+*.min.js
