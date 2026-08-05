@@ -14,6 +14,18 @@ const nextConfig: NextConfig = {
       bodySizeLimit: '4mb',
     },
   },
+  async rewrites() {
+    const apiUrl =
+      process.env.NEXT_PUBLIC_API_URL ||
+      process.env.API_URL ||
+      'https://examshield-api.up.railway.app';
+    return [
+      {
+        source: '/api/v1/:path*',
+        destination: `${apiUrl}/api/v1/:path*`,
+      },
+    ];
+  },
   async headers() {
     return [
       {
