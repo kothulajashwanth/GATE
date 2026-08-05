@@ -27,6 +27,33 @@ interface ClientOptions {
 export function createClient(opts: ClientOptions = {}) {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
+  let token = opts.token ?? null;
+
+  async function ensureToken(): Promise<string> {
+    if (token && !isExpired(token)) return token;
+    token = await mintToken();
+    return token;
+  }
+
+  function isExpired(jwt: string): boolean {
+    try {
+      const payload = JSON.parse(atob(jwt.split('.')[1]));
+      return Date.now() >= payload.exp * 1000;
+    } catch {
+      return true;
+    }
+  }
+
+  async function mintToken(): Promise<string> {
+    const response = await fetch(`${baseUrl}/api/v1/auth/token`, {
+      method: 'POST',
+      credentials: 'include', // Clerk session cookie
+    });
+    if (!response.ok) throw new ApiError(response.status, 'token_mint_failed', 'Failed to mint token');
+    const data = await response.json();
+    return data.access_token;
+  }
+
   async function request<T>(
     method: string,
     path: string,
@@ -37,7 +64,9 @@ export function createClient(opts: ClientOptions = {}) {
       'Content-Type': 'application/json',
       'X-Request-Id': crypto.randomUUID(),
     };
-    if (opts.token) headers.Authorization = `Bearer ${opts.token}`;
+    if (path !== '/api/v1/auth/token') {
+      headers.Authorization = `Bearer ${await ensureToken()}`;
+    }
 
     const response = await fetch(`${baseUrl}${path}`, {
       method,
@@ -52,6 +81,9 @@ export function createClient(opts: ClientOptions = {}) {
         payload = (await response.json()) as typeof payload;
       } catch {
         // non-json error body; fall through with defaults
+      }
+      if (response.status === 401 && path !== '/api/v1/auth/token') {
+        token = null; // force refresh on next call
       }
       throw new ApiError(
         response.status,
@@ -81,11 +113,14 @@ export function createClient(opts: ClientOptions = {}) {
     delete<T>(path: string, signal?: AbortSignal) {
       return request<T>('DELETE', path, undefined, signal);
     },
+    setToken: (t: string | null) => {
+      token = t;
+    },
     raw: {
       /** Download a non-json resource (report, export) as a Blob. */
-      async download(path: string, token?: string): Promise<Blob> {
+      async download(path: string, t?: string): Promise<Blob> {
         const headers: Record<string, string> = {};
-        if (token) headers.Authorization = `Bearer ${token}`;
+        if (t) headers.Authorization = `Bearer ${t}`;
         const response = await fetch(`${baseUrl}${path}`, { headers });
         if (!response.ok) {
           throw new ApiError(response.status, 'download_failed', 'Failed to download file');

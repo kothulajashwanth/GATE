@@ -122,8 +122,8 @@ async def _internal_or_clerk_user(
 
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
-    x_internal_key: Annotated[str | None, Header(default=None, alias="X-Internal-Key")],
     db: Annotated[AsyncSession, Depends(get_db)],
+    x_internal_key: Annotated[str | None, Header(alias="X-Internal-Key")] = None,
 ) -> User:
     user = await _internal_or_clerk_user(credentials, x_internal_key, db)
     return user

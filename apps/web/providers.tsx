@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useState, type ReactNode, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuth } from '@clerk/nextjs';
 import { createClient } from '@/lib/api/client';
@@ -9,11 +9,6 @@ import { Toaster } from '@examshield/ui';
 import { TooltipProvider } from '@radix-ui/react-tooltip';
 import { ThemeProvider } from 'next-themes';
 
-/**
- * Top-level provider composition. The API client is recreated with a fresh
- * Clerk JWT whenever the session changes, so every request carries a valid
- * bearer token.
- */
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
     () =>
@@ -28,7 +23,7 @@ export function Providers({ children }: { children: ReactNode }) {
       }),
   );
 
-  const { getToken, isLoaded } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [client] = useState(() => createClient({}));
 
   return (
