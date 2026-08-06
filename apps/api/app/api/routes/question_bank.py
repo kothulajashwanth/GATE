@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, File, Request, UploadFile, status
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,16 +72,58 @@ async def list_folders(db: Annotated[AsyncSession, Depends(get_db)]) -> list[Fol
     return [FolderOut(f) for f in result.scalars().all()]
 
 
-@router.post("/folders", response_model=FolderOut, status_code=status.HTTP_201_CREATED)
-async def create_folder(
-    body: FolderCreate,
+@router.post("/upload-document", summary="Upload and parse question document (PDF, DOCX, TXT, XLSX)")
+async def upload_document(
     request: Request,
     actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> FolderOut:
-    folder = QuestionBankFolder(name=body.name, parent_id=body.parentId, created_by=actor.id)
-    db.add(folder)
+    file: UploadFile = File(...),
+    subject_id: str | None = None,
+) -> dict:
+    from app.services.document_parser import parse_document
+    from app.db.models.question import Question
+
+    content = await file.read()
+    parsed_questions = parse_document(content, file.filename)
+
+    saved_questions = []
+    for q_data in parsed_questions:
+        q = Question(
+            title=q_data["title"],
+            question_type=q_data["type"],
+            options=q_data["options"],
+            answer_key=q_data["answer"],
+            difficulty=q_data["difficulty"],
+            explanation=q_data["explanation"],
+            marks=q_data["marks"],
+            subject_id=subject_id,
+            created_by=actor.id,
+        )
+        db.add(q)
+        saved_questions.append(q)
+
     await db.flush()
-    await AuditService.log(db, actor=actor, request=request, action="folder.create", entity_type="folder", entity_id=str(folder.id), new_value=body.model_dump(mode="json"))
+    await AuditService.log(
+        db,
+        actor=actor,
+        request=request,
+        action="question_bank.upload_document",
+        entity_type="question_bank",
+        new_value={"filename": file.filename, "parsed_count": len(saved_questions)},
+    )
     await db.commit()
-    return FolderOut(folder)
+
+    return {
+        "filename": file.filename,
+        "total_parsed": len(saved_questions),
+        "questions": [
+            {
+                "id": str(q.id),
+                "title": q.title,
+                "options": q.options,
+                "answer": q.answer_key,
+                "difficulty": q.difficulty.value,
+            }
+            for q in saved_questions
+        ],
+    }
