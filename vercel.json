@@ -1,13 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "npx pnpm --filter @examshield/web build",
+  "buildCommand": "pnpm --filter @examshield/web build",
   "outputDirectory": "apps/web/.next",
-  "installCommand": "npx pnpm install --no-frozen-lockfile",
+  "installCommand": "pnpm install --no-frozen-lockfile",
   "rewrites": [
     {
       "source": "/api/v1/:path*",
-      "destination": "https://examshield-api.up.railway.app/api/v1/:path*"
+      "destination": "https://gate-ds9h.onrender.com/api/v1/:path*"
     }
   ]
 }
