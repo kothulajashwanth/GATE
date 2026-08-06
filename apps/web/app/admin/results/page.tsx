@@ -6,16 +6,16 @@ import { Award, Search, Download, CheckCircle2, XCircle, Clock, FileSpreadsheet 
 import { useState } from 'react';
 import { formatDate } from '@examshield/utils';
 
+const MOCK_RESULTS = [
+  { id: '1', studentName: 'Alex Johnson', rollNo: 'CSE2024-001', examTitle: 'Data Structures Mid-term', score: 92, total: 100, percentage: 92, status: 'PASS', date: '2026-08-01T00:00:00.000Z' },
+  { id: '2', studentName: 'Sarah Smith', rollNo: 'CSE2024-045', examTitle: 'Data Structures Mid-term', score: 78, total: 100, percentage: 78, status: 'PASS', date: '2026-08-01T00:00:00.000Z' },
+  { id: '3', studentName: 'Michael Brown', rollNo: 'ECE2024-012', examTitle: 'Operating Systems Quiz', score: 35, total: 100, percentage: 35, status: 'FAIL', date: '2026-07-31T00:00:00.000Z' },
+];
+
 export default function AdminResultsPage() {
   const [search, setSearch] = useState('');
 
-  const resultsList = [
-    { id: '1', studentName: 'Alex Johnson', rollNo: 'CSE2024-001', examTitle: 'Data Structures Mid-term', score: 92, total: 100, percentage: 92, status: 'PASS', date: new Date().toISOString() },
-    { id: '2', studentName: 'Sarah Smith', rollNo: 'CSE2024-045', examTitle: 'Data Structures Mid-term', score: 78, total: 100, percentage: 78, status: 'PASS', date: new Date().toISOString() },
-    { id: '3', studentName: 'Michael Brown', rollNo: 'ECE2024-012', examTitle: 'Operating Systems Quiz', score: 35, total: 100, percentage: 35, status: 'FAIL', date: new Date(Date.now() - 86400000).toISOString() },
-  ];
-
-  const filtered = resultsList.filter((r) =>
+  const filtered = MOCK_RESULTS.filter((r) =>
     r.studentName.toLowerCase().includes(search.toLowerCase()) || r.rollNo.toLowerCase().includes(search.toLowerCase())
   );
 

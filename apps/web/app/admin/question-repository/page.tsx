@@ -299,7 +299,7 @@ export default function QuestionRepositoryPage() {
                 </div>
 
                 <div className="p-4 rounded-xl bg-slate-950 text-slate-100 font-mono text-xs space-y-2">
-                  <p className="text-slate-400">// Parsing Pipeline Sample Output</p>
+                  <p className="text-slate-400">{`// Parsing Pipeline Sample Output`}</p>
                   <p className="text-emerald-400">[VALIDATED] Q1: What is Java? (Type: MCQ, Options: 4, Correct: B)</p>
                   <p className="text-emerald-400">[VALIDATED] Q2: Explain Polymorphism. (Type: Paragraph, Marks: 5)</p>
                   {selectedFile.status === 'failed' && (

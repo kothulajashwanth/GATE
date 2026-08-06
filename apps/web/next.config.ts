@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
     const apiUrl =
       process.env.NEXT_PUBLIC_API_URL ||
       process.env.API_URL ||
-      'https://examshield-api.up.railway.app';
+      'https://gate-ds9h.onrender.com';
     return [
       {
         source: '/api/v1/:path*',

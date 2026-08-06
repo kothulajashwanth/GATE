@@ -78,15 +78,10 @@ export default function ExamPage() {
 
   useEffect(() => {
     if (sessionData) {
-      setSession(sessionData);
-      setDeadline(sessionData.deadlineAt);
-      setWarnings(sessionData.warningCount);
-      // pre-fill answers from session if any (resume)
-      const existingAnswers: Record<string, string[]> = {};
-      sessionData.questions.forEach(q => {
-        if (q.isAnswered) {
-          // would need actual answer data; for now just mark answered
-        }
+      queueMicrotask(() => {
+        setSession(sessionData);
+        setDeadline(sessionData.deadlineAt);
+        setWarnings(sessionData.warningCount);
       });
     }
   }, [sessionData]);

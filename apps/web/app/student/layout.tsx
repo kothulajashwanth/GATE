@@ -10,6 +10,8 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
   const items = [...getStudentNav()] as NavItem[];
 
   return (
-    <AppShell items={items} children={children} role="student" />
+    <AppShell items={items} role="student">
+      {children}
+    </AppShell>
   );
 }
