@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "ExamShield AI - Enterprise Secure Online Examination Management System",
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@10.2.0",
   "scripts": {
     "dev": "pnpm --filter @examshield/web dev",
     "build": "pnpm --filter @examshield/web build",
