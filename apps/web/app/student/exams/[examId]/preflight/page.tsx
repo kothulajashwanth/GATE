@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/client-provider';
 import { PageHeader } from '@/components/page-header';
-import { Card, CardContent, CardHeader, CardTitle, Button, Badge, Checkbox } from '@examshield/ui';
+import { Card, CardContent, CardHeader, CardTitle, Button, Badge } from '@examshield/ui';
 import { ShieldCheck, CheckCircle2, AlertCircle, Clock, Wifi, Lock, Loader2, ArrowRight, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -166,7 +166,13 @@ export default function PreflightPage() {
             </div>
 
             <div className="flex items-start gap-2 pt-2">
-              <Checkbox id="rules-agree" checked={agreed} onCheckedChange={(c) => setAgreed(!!c)} />
+              <input
+                type="checkbox"
+                id="rules-agree"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary mt-0.5 cursor-pointer"
+              />
               <label htmlFor="rules-agree" className="text-xs text-foreground cursor-pointer font-medium">
                 I have read and understood all examination rules, instructions, and technical preflight requirements.
               </label>
