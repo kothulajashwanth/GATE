@@ -1,14 +1,14 @@
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.auth import require_roles
-from app.core.errors import NotFoundError
-from app.db.models.exam import Exam
+from app.core.errors import ForbiddenError, NotFoundError
+from app.db.models.exam import Exam, ExamStatus
 from app.db.models.question import Question
 from app.db.models.session import ExamSession, SessionStatus
 from app.db.models.student import Student
@@ -64,6 +64,19 @@ class SessionView(BaseModel):
     securityMode: bool
     negativeMarksEnabled: bool
     negativeMarksValue: float
+
+
+class PreflightResponse(BaseModel):
+    isEligible: bool
+    examOpen: bool
+    startAt: str
+    endAt: str
+    serverTime: str
+    attemptCount: int
+    maxAttempts: int
+    remainingAttempts: int
+    activeSessionId: str | None = None
+    issues: list[str] = []
 
 
 async def _student_or_404(db: AsyncSession, user: User) -> Student:
@@ -122,6 +135,54 @@ def _to_view(session: ExamSession, exam: Exam, questions: list[Question], answer
     )
 
 
+@router.get("/preflight/{exam_id}", response_model=PreflightResponse, summary="Perform Technical & Eligibility Preflight Check")
+async def preflight_check(
+    exam_id: str,
+    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PreflightResponse:
+    student = await _student_or_404(db, user)
+    exam = await _exam_or_404(db, exam_id)
+    now = datetime.now(UTC)
+
+    issues = []
+    exam_open = exam.status in (ExamStatus.PUBLISHED, ExamStatus.LIVE, ExamStatus.IN_PROGRESS) and (exam.start_at <= now <= exam.end_at)
+    if not exam_open:
+        issues.append("Exam is not currently in an active schedule window")
+
+    if not student.is_active:
+        issues.append("Student account is inactive")
+
+    # Count existing attempts
+    attempts_res = await db.execute(
+        select(ExamSession).where(
+            ExamSession.student_id == student.id,
+            ExamSession.exam_id == exam.id,
+        )
+    )
+    attempts = attempts_res.scalars().all()
+    active_session = next((s for s in attempts if s.status == SessionStatus.ACTIVE), None)
+    finished_count = len([s for s in attempts if s.status in (SessionStatus.SUBMITTED, SessionStatus.EXPIRED, SessionStatus.TERMINATED)])
+
+    if finished_count >= exam.attempt_limit and not active_session:
+        issues.append(f"Maximum attempt limit ({exam.attempt_limit}) reached")
+
+    is_eligible = len(issues) == 0 or active_session is not None
+
+    return PreflightResponse(
+        isEligible=is_eligible,
+        examOpen=exam_open,
+        startAt=exam.start_at.isoformat(),
+        endAt=exam.end_at.isoformat(),
+        serverTime=now.isoformat(),
+        attemptCount=finished_count,
+        maxAttempts=exam.attempt_limit,
+        remainingAttempts=max(0, exam.attempt_limit - finished_count),
+        activeSessionId=str(active_session.id) if active_session else None,
+        issues=issues,
+    )
+
+
 @router.post("/start", response_model=SessionView, summary="Start or resume an exam session")
 async def start_exam(
     body: StartRequest,
@@ -142,7 +203,6 @@ async def start_exam(
     )
     questions = await engine.get_questions(exam, session)
 
-    # answered question ids
     result = await db.execute(select(ExamSession).where(ExamSession.id == session.id))
     full = result.scalar_one()
     answered = {str(a.question_id) for a in full.answers}
@@ -159,8 +219,6 @@ async def get_session(
 ) -> SessionView:
     session = await _session_or_404(db, session_id)
     if session.student_id != (await _student_or_404(db, user)).id:
-        from app.core.errors import ForbiddenError
-
         raise ForbiddenError("Not your session")
     exam = await _exam_or_404(db, str(session.exam_id))
     engine = ExamEngine(db)
@@ -177,6 +235,8 @@ async def save_answer(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     session = await _session_or_404(db, session_id)
+    if session.student_id != (await _student_or_404(db, user)).id:
+        raise ForbiddenError("Not your session")
     engine = ExamEngine(db)
     await engine.save_answer(session, body.questionId, body.answer)
     await db.commit()
@@ -191,6 +251,8 @@ async def heartbeat(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     session = await _session_or_404(db, session_id)
+    if session.student_id != (await _student_or_404(db, user)).id:
+        raise ForbiddenError("Not your session")
     engine = ExamEngine(db)
     session = await engine.heartbeat(session, body.warningCount)
     await db.commit()
@@ -210,6 +272,8 @@ async def record_violation(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     session = await _session_or_404(db, session_id)
+    if session.student_id != (await _student_or_404(db, user)).id:
+        raise ForbiddenError("Not your session")
     engine = ExamEngine(db)
     session = await engine.record_violation(session, body.violationType, body.reason)
     await db.commit()
@@ -228,10 +292,11 @@ async def submit(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     session = await _session_or_404(db, session_id)
+    if session.student_id != (await _student_or_404(db, user)).id:
+        raise ForbiddenError("Not your session")
     engine = ExamEngine(db)
     session = await engine.submit(session)
 
-    # auto-evaluate objective questions; subjective flagged for manual review
     from app.services.results import ResultCalculator
 
     calc = ResultCalculator(db)

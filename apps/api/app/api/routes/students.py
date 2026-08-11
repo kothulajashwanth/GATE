@@ -5,10 +5,12 @@ from fastapi import APIRouter, Depends, File, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import PageParams, PaginateParams
 from app.core.auth import require_roles
 from app.core.errors import NotFoundError
+from app.db.models.student import Student
 from app.db.models.user import Role, User
 from app.db.session import get_db
 from app.repositories.student import StudentRepository
@@ -16,12 +18,17 @@ from app.repositories.user import UserRepository
 from app.schemas.pagination import PaginatedResponse
 from app.schemas.student import StudentCreate, StudentRow, StudentUpdate
 from app.services.audit import AuditService
+from app.services.imports import (
+    generate_student_template,
+    import_students_from_excel,
+    validate_student_import,
+)
 from app.services.students import StudentService
 
 router = APIRouter()
 
 
-def _row(student) -> StudentRow:
+def _row(student: Student) -> StudentRow:
     dept = student.department
     sem = student.semester
     sec = student.section
@@ -63,17 +70,43 @@ async def list_students(
     return PaginatedResponse.build(items, page, page_size, total)
 
 
-@router.get("/export", summary="Export students as Excel")
-async def export_students(
+@router.get("/template", summary="Download student bulk import template (.xlsx)")
+async def download_template(
     _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+) -> StreamingResponse:
+    buf = generate_student_template()
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="student_import_template.xlsx"'},
+    )
+
+
+@router.get("/export", summary="Export students as Excel roster")
+async def export_students(
+    request: Request,
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
+    query: str | None = None,
+    department_id: str | None = None,
+    semester_id: str | None = None,
+    section_id: str | None = None,
+    is_active: bool | None = None,
 ) -> StreamingResponse:
     from openpyxl import Workbook
 
-    rows, _ = await StudentService(db).list(page=1, page_size=100000)
+    rows, _ = await StudentService(db).list(
+        query=query,
+        department_id=department_id,
+        semester_id=semester_id,
+        section_id=section_id,
+        is_active=is_active,
+        page=1,
+        page_size=100000,
+    )
     wb = Workbook()
     ws = wb.active
-    ws.title = "Students"
+    ws.title = "Student Roster"
     ws.append(["Roll Number", "Name", "Email", "Phone", "Department", "Semester", "Section", "Status"])
     for r in rows:
         ws.append([
@@ -81,11 +114,21 @@ async def export_students(
             r["name"],
             r["email"],
             r.get("phone") or "",
-            r["department"]["name"] if r["department"] else "",
-            r["semester"]["name"] if r["semester"] else "",
-            r["section"]["name"] if r["section"] else "",
-            "Active" if r["isActive"] else "Inactive",
+            r["department"]["name"] if r.get("department") else "",
+            r["semester"]["name"] if r.get("semester") else "",
+            r["section"]["name"] if r.get("section") else "",
+            "Active" if r.get("isActive") else "Inactive",
         ])
+
+    await AuditService.log(
+        db,
+        actor=actor,
+        request=request,
+        action="STUDENT_EXPORT_REQUESTED",
+        entity_type="student",
+        new_value={"total_exported": len(rows)},
+    )
+    await db.commit()
 
     buf = BytesIO()
     wb.save(buf)
@@ -93,26 +136,34 @@ async def export_students(
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="students.xlsx"'},
+        headers={"Content-Disposition": 'attachment; filename="student_roster.xlsx"'},
     )
 
 
-@router.post("/import", response_model=dict, summary="Import students from Excel (with validation)")
+@router.post("/import/validate", response_model=dict, summary="Validate student import file before confirmation")
+async def validate_import(
+    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file: Annotated[UploadFile, File(...)],
+) -> dict:
+    content = await file.read()
+    return await validate_student_import(db, BytesIO(content))
+
+
+@router.post("/import", response_model=dict, summary="Import validated student roster into PostgreSQL")
 async def import_students(
     request: Request,
     actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
     file: Annotated[UploadFile, File(...)],
 ) -> dict:
-    from app.services.imports import import_students_from_excel
-
     content = await file.read()
     result = await import_students_from_excel(db, BytesIO(content))
     await AuditService.log(
         db,
         actor=actor,
         request=request,
-        action="student.import",
+        action="STUDENT_IMPORTED",
         entity_type="student",
         new_value={"total": result.total, "imported": result.imported, "failed": result.failed},
     )
@@ -131,14 +182,15 @@ async def get_student(
     _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> StudentRow:
-    from sqlalchemy.orm import selectinload
-
-    from app.db.models.student import Student
-
     result = await db.execute(
         select(Student)
         .where(Student.id == student_id, Student.deleted_at.is_(None))
-        .options(selectinload(Student.user), selectinload(Student.department), selectinload(Student.semester), selectinload(Student.section))
+        .options(
+            selectinload(Student.user),
+            selectinload(Student.department),
+            selectinload(Student.semester),
+            selectinload(Student.section),
+        )
     )
     student = result.scalar_one_or_none()
     if student is None:
@@ -153,8 +205,7 @@ async def create_student(
     actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> StudentRow:
-    # create the platform account (no Clerk ID yet; linked on first sign-in via email)
-    user = await UserRepository(db).create(
+    user = await UserRepository(db).create_user(
         email=body.email,
         first_name=body.firstName,
         last_name=body.lastName,
@@ -178,16 +229,29 @@ async def create_student(
         db,
         actor=actor,
         request=request,
-        action="student.create",
+        action="STUDENT_CREATED",
         entity_type="student",
         entity_id=str(student.id),
         new_value=body.model_dump(mode="json"),
     )
     await db.commit()
     await db.refresh(student)
-    return _row(student)
+
+    # Fetch loaded relationships
+    res = await db.execute(
+        select(Student)
+        .where(Student.id == student.id)
+        .options(
+            selectinload(Student.user),
+            selectinload(Student.department),
+            selectinload(Student.semester),
+            selectinload(Student.section),
+        )
+    )
+    return _row(res.scalar_one())
 
 
+@router.put("/{student_id}", response_model=StudentRow, summary="Update student")
 @router.patch("/{student_id}", response_model=StudentRow, summary="Update student")
 async def update_student(
     student_id: str,
@@ -198,17 +262,32 @@ async def update_student(
 ) -> StudentRow:
     repo = StudentRepository(db)
     student = await repo.get(student_id)
-    old_value = {"rollNumber": student.roll_number, "isActive": student.user.is_active if student.user else None}
+    old_value = {
+        "rollNumber": student.roll_number,
+        "isActive": student.user.is_active if student.user else None,
+    }
 
     updates = body.model_dump(exclude_unset=True, exclude_none=True)
+    if "firstName" in updates or "lastName" in updates:
+        if student.user:
+            if "firstName" in updates:
+                student.user.first_name = updates["firstName"]
+            if "lastName" in updates:
+                student.user.last_name = updates["lastName"]
+
     if any(k in updates for k in ("departmentId", "semesterId", "sectionId")):
-        student.department_id = updates.get("departmentId", student.department_id)
-        student.semester_id = updates.get("semesterId", student.semester_id)
-        student.section_id = updates.get("sectionId", student.section_id)
+        if "departmentId" in updates:
+            student.department_id = updates["departmentId"]
+        if "semesterId" in updates:
+            student.semester_id = updates["semesterId"]
+        if "sectionId" in updates:
+            student.section_id = updates["sectionId"]
+
     if "phone" in updates:
         student.phone = updates["phone"]
         if student.user:
             student.user.phone = updates["phone"]
+
     if "isActive" in updates and student.user:
         student.user.is_active = updates["isActive"]
 
@@ -217,18 +296,28 @@ async def update_student(
         db,
         actor=actor,
         request=request,
-        action="student.update",
+        action="STUDENT_UPDATED",
         entity_type="student",
         entity_id=str(student.id),
         old_value=old_value,
         new_value=body.model_dump(mode="json", exclude_none=True),
     )
     await db.commit()
-    await db.refresh(student)
-    return _row(student)
+
+    res = await db.execute(
+        select(Student)
+        .where(Student.id == student.id)
+        .options(
+            selectinload(Student.user),
+            selectinload(Student.department),
+            selectinload(Student.semester),
+            selectinload(Student.section),
+        )
+    )
+    return _row(res.scalar_one())
 
 
-@router.delete("/{student_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete student (soft)")
+@router.delete("/{student_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Deactivate / soft delete student")
 async def delete_student(
     student_id: str,
     request: Request,
@@ -244,7 +333,7 @@ async def delete_student(
         db,
         actor=actor,
         request=request,
-        action="student.delete",
+        action="STUDENT_DEACTIVATED",
         entity_type="student",
         entity_id=student_id,
         old_value={"rollNumber": student.roll_number},

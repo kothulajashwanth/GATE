@@ -1,6 +1,6 @@
-# ExamShield AI
+# GATE IGNITE
 
-Enterprise Secure Online Examination Management System for colleges. Monorepo: Next.js 16 web app + FastAPI backend + PostgreSQL + Redis.
+GATE IGNITE — Secure AI-Powered Examination & Assessment Platform for GATE Preparation. Monorepo: Next.js web app + FastAPI backend + Render PostgreSQL + Redis.
 
 ## Quick Start
 

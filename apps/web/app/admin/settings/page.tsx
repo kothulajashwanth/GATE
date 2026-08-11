@@ -35,11 +35,11 @@ export default function AdminSettingsPage() {
         <CardContent className="space-y-4">
           <div className="grid gap-2">
             <Label>College / Institution Name</Label>
-            <Input defaultValue="ExamShield College of Engineering & Technology" />
+            <Input defaultValue="GATE IGNITE Academy of Engineering" />
           </div>
           <div className="grid gap-2">
             <Label>Admin Support Email</Label>
-            <Input defaultValue="admin@examshield.local" />
+            <Input defaultValue="admin@gateignite.local" />
           </div>
         </CardContent>
       </Card>

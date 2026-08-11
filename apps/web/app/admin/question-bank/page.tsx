@@ -1,41 +1,15 @@
 'use client';
 
-import {
-  FolderKanban,
-  BookOpen,
-  Tag,
-  Brain,
-  Wand2,
-  FileText,
-  Download,
-  Upload,
-  Search,
-  Filter,
-  Plus,
-  ChevronRight,
-  MoreHorizontal,
-  Eye,
-  Edit,
-  Copy,
-  Trash2,
-  Sparkles,
-  History,
-  TrendingUp,
-  AlertCircle,
-  CheckCircle2,
-  ArrowUpRight,
-  ArrowDownRight,
-  Languages,
-} from 'lucide-react';
 import { useState } from 'react';
 import {
-  Card, CardContent, CardHeader, CardTitle,
-  Button, Input, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  BookOpen, Search, Filter, Plus, MoreHorizontal, Eye, Edit, Trash2, History,
+  CheckCircle2, AlertCircle, FileText, Loader2, Sparkles, FolderKanban
+} from 'lucide-react';
+import {
+  Card, CardContent, Button, Input, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-  Tabs, TabsContent, TabsList, TabsTrigger,
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-  Label, Textarea,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Label, Textarea
 } from '@examshield/ui';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
@@ -43,166 +17,179 @@ import { DataTablePagination } from '@/components/data-table-pagination';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/client-provider';
 import { toast } from 'sonner';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Paginated } from '@examshield/types';
+import type { Paginated } from '@examshield/types';
 
-const questionTypes = ['mcq', 'true_false', 'fill_blank', 'paragraph', 'coding', 'image_based', 'multi_select'] as const;
-const difficulties = ['easy', 'medium', 'hard'] as const;
-const bloomLevels = ['remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'] as const;
-
-type QuestionType = (typeof questionTypes)[number];
-type Difficulty = (typeof difficulties)[number];
-type BloomLevel = (typeof bloomLevels)[number];
+interface QuestionVersionItem {
+  version: number;
+  changeSummary?: str;
+  createdAt: string;
+}
 
 interface QuestionRow {
   id: string;
-  type: QuestionType;
+  type: string;
   text: string;
-  difficulty: Difficulty;
-  bloomLevel: BloomLevel | null;
-  tags: string[];
+  options: string[] | null;
+  correctAnswers: string[];
+  explanation: string | null;
+  difficulty: string;
+  bloomLevel: string | null;
   marks: number;
+  topic: string | null;
+  subjectId: string | null;
   isVerified: boolean;
   isAiGenerated: boolean;
-  subject: { id: string; name: string } | null;
-  folder: { id: string; name: string } | null;
-  version?: number;
-  accuracyRate?: number;
+  version: number;
+  versions?: QuestionVersionItem[];
+  createdAt: string;
 }
 
 const questionSchema = z.object({
-  type: z.enum(questionTypes),
+  type: z.string(),
   text: z.string().min(1, 'Question text required'),
   options: z.array(z.string()).optional(),
   correctAnswers: z.array(z.string()).min(1, 'At least one correct answer required'),
   explanation: z.string().optional(),
-  hint: z.string().optional(),
-  difficulty: z.enum(difficulties),
-  bloomLevel: z.enum(bloomLevels).optional(),
-  tags: z.array(z.string()).default([]),
+  difficulty: z.string(),
   marks: z.number().min(1).default(1),
-  negativeMarks: z.number().default(0),
   topic: z.string().optional(),
   subjectId: z.string().optional(),
-  folderId: z.string().optional(),
-  isVerified: z.boolean().default(false),
-}).strict();
+  isVerified: z.boolean().default(true),
+});
 type QuestionForm = z.infer<typeof questionSchema>;
 
 function CreateQuestionDialog({ onCreated }: { onCreated: () => void }) {
   const api = useApiClient();
-  const { register, handleSubmit, watch, formState: { errors } } = useForm<QuestionForm>({
-    resolver: zodResolver(questionSchema) as any,
+  const [open, setOpen] = useState(false);
+  const [optA, setOptA] = useState('');
+  const [optB, setOptB] = useState('');
+  const [optC, setOptC] = useState('');
+  const [optD, setOptD] = useState('');
+  const [correctAns, setCorrectAns] = useState('A');
+
+  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<QuestionForm>({
+    resolver: zodResolver(questionSchema),
     defaultValues: {
       type: 'mcq',
       difficulty: 'medium',
       marks: 1,
-      tags: [],
-      isVerified: false,
-      negativeMarks: 0,
-      correctAnswers: [],
+      isVerified: true,
+      correctAnswers: ['A'],
     },
   });
-  const [open, setOpen] = useState(false);
 
-  const { data: subjects } = useQuery({
+  const { data: subjects } = useQuery<{ id: string; name: string }[]>({
     queryKey: ['subjects'],
     queryFn: () => api.get<{ id: string; name: string }[]>('/question-bank/subjects'),
   });
-  const { data: folders } = useQuery({
-    queryKey: ['folders'],
-    queryFn: () => api.get<{ id: string; name: string }[]>('/question-bank/folders'),
-  });
 
   const mutation = useMutation({
-    mutationFn: (values: QuestionForm) => api.post('/questions', values),
-    onSuccess: () => { toast.success('Question created'); setOpen(false); onCreated(); },
-    onError: (e: Error) => toast.error(e.message),
+    mutationFn: (values: QuestionForm) => {
+      const payload = {
+        ...values,
+        options: [optA, optB, optC, optD].filter(Boolean),
+        correctAnswers: [correctAns],
+      };
+      return api.post('/questions', payload);
+    },
+    onSuccess: () => {
+      toast.success('Question added to database');
+      setOpen(false);
+      reset();
+      onCreated();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Failed to create question'),
   });
-
-  const type = watch('type');
-  const needsOptions = ['mcq', 'multi_select'].includes(type);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm"><Plus className="h-4 w-4" /> Add Question</Button>
+        <Button size="sm" className="glass-button"><Plus className="h-4 w-4 mr-1" /> Add Question</Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto max-w-3xl">
+      <DialogContent className="glass-modal max-h-[90vh] overflow-y-auto max-w-xl">
         <DialogHeader>
-          <DialogTitle>Create Question</DialogTitle>
-          <DialogDescription>Add a new question to the bank.</DialogDescription>
+          <DialogTitle>Add New Question</DialogTitle>
+          <DialogDescription>Create a single question record in PostgreSQL Question Bank.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
+        <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-4 text-xs">
           <div className="space-y-2">
-            <Label>Type</Label>
-            <Select value={type} onValueChange={(v) => register('type').onChange({ target: { value: v } })}>
-              <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-              <SelectContent>
-                {questionTypes.map(t => <SelectItem key={t} value={t}>{t.replace('_', ' ')}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Label>Question Text *</Label>
+            <Textarea {...register('text')} placeholder="Enter full question text..." rows={3} className="glass-input" />
+            {errors.text && <p className="text-destructive">{errors.text.message}</p>}
           </div>
-
-          <div className="space-y-2">
-            <Label>Question Text</Label>
-            <Textarea {...register('text')} rows={4} placeholder="Enter question..." />
-            {errors.text && <p className="text-xs text-destructive">{errors.text.message}</p>}
-          </div>
-
-          {needsOptions && (
-            <div className="space-y-2">
-              <Label>Options (one per line)</Label>
-              <Textarea
-                onBlur={(e) => {
-                  const value = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
-                  register('options').onChange({ target: { value } });
-                }}
-                rows={4}
-                placeholder="Option A\nOption B\nOption C\nOption D"
-              />
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>Correct Answer(s)</Label>
-            <Textarea
-              onBlur={(e) => {
-                const value = e.target.value.split('\n').map(s => s.trim()).filter(Boolean);
-                register('correctAnswers').onChange({ target: { value } });
-              }}
-              rows={3}
-              placeholder={needsOptions ? 'A\nC' : 'true'}
-            />
-            {errors.correctAnswers && <p className="text-xs text-destructive">{errors.correctAnswers.message}</p>}
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
+              <Label>Question Type</Label>
+              <Controller
+                name="type"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="glass-input"><SelectValue /></SelectTrigger>
+                    <SelectContent className="glass-modal">
+                      <SelectItem value="mcq">MCQ (Single Choice)</SelectItem>
+                      <SelectItem value="multi_select">Multi Select</SelectItem>
+                      <SelectItem value="true_false">True / False</SelectItem>
+                      <SelectItem value="fill_blank">Fill in the Blank</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
+            <div className="space-y-2">
               <Label>Difficulty</Label>
-              <Select {...register('difficulty')}>
-                <SelectTrigger><SelectValue placeholder="Select difficulty" /></SelectTrigger>
-                <SelectContent>
-                  {difficulties.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+              <Controller
+                name="difficulty"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger className="glass-input"><SelectValue /></SelectTrigger>
+                    <SelectContent className="glass-modal">
+                      <SelectItem value="easy">Easy</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><Label>Option A</Label><Input value={optA} onChange={(e) => setOptA(e.target.value)} placeholder="Option A text" className="glass-input" /></div>
+            <div><Label>Option B</Label><Input value={optB} onChange={(e) => setOptB(e.target.value)} placeholder="Option B text" className="glass-input" /></div>
+            <div><Label>Option C</Label><Input value={optC} onChange={(e) => setOptC(e.target.value)} placeholder="Option C text" className="glass-input" /></div>
+            <div><Label>Option D</Label><Input value={optD} onChange={(e) => setOptD(e.target.value)} placeholder="Option D text" className="glass-input" /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Correct Option</Label>
+              <Select value={correctAns} onValueChange={setCorrectAns}>
+                <SelectTrigger className="glass-input"><SelectValue /></SelectTrigger>
+                <SelectContent className="glass-modal">
+                  <SelectItem value="A">Option A</SelectItem>
+                  <SelectItem value="B">Option B</SelectItem>
+                  <SelectItem value="C">Option C</SelectItem>
+                  <SelectItem value="D">Option D</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Bloom Level</Label>
-              <Select {...register('bloomLevel')}>
-                <SelectTrigger><SelectValue placeholder="Optional" /></SelectTrigger>
-                <SelectContent>
-                  {bloomLevels.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>Marks</Label>
+              <Input type="number" {...register('marks', { valueAsNumber: true })} defaultValue={1} className="glass-input" />
             </div>
           </div>
-
+          <div className="space-y-2">
+            <Label>Explanation / Solution</Label>
+            <Textarea {...register('explanation')} placeholder="Optional solution explanation..." rows={2} className="glass-input" />
+          </div>
           <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? 'Creating...' : 'Create Question'}
+              {mutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              {mutation.isPending ? 'Saving...' : 'Save Question'}
             </Button>
           </DialogFooter>
         </form>
@@ -211,214 +198,230 @@ function CreateQuestionDialog({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-export default function QuestionsPage() {
+export default function QuestionBankPage() {
   const api = useApiClient();
   const queryClient = useQueryClient();
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  const [difficultyFilter, setDifficultyFilter] = useState('');
-  const [tab, setTab] = useState('list');
-  const [inspectedQuestion, setInspectedQuestion] = useState<QuestionRow | null>(null);
-  const [aiToolbarAction, setAiToolbarAction] = useState<string | null>(null);
+  const [diffFilter, setDiffFilter] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('');
+
+  const [viewQuestion, setViewQuestion] = useState<QuestionRow | null>(null);
 
   const params: Record<string, unknown> = { page, page_size: 20 };
   if (search) params.search = search;
-  if (typeFilter) params.question_type = typeFilter;
-  if (difficultyFilter) params.difficulty = difficultyFilter;
+  if (typeFilter && typeFilter !== 'all') params.question_type = typeFilter;
+  if (diffFilter && diffFilter !== 'all') params.difficulty = diffFilter;
+  if (subjectFilter && subjectFilter !== 'all') params.subject_id = subjectFilter;
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['questions', params],
     queryFn: () => api.get<Paginated<QuestionRow>>('/questions', params),
   });
 
-  const deleteQuestion = useMutation({
+  const { data: subjects } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['subjects'],
+    queryFn: () => api.get<{ id: string; name: string }[]>('/question-bank/subjects'),
+  });
+
+  const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/questions/${id}`),
-    onSuccess: () => { toast.success('Question deleted'); queryClient.invalidateQueries({ queryKey: ['questions'] }); },
+    onSuccess: () => {
+      toast.success('Question deleted from Question Bank');
+      queryClient.invalidateQueries({ queryKey: ['questions'] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const handleAiAction = (actionName: string) => {
-    setAiToolbarAction(actionName);
-    setTimeout(() => {
-      setAiToolbarAction(null);
-      toast.success(`AI Action Completed: ${actionName}`);
-    }, 1200);
-  };
-
   return (
     <div className="space-y-6">
-      <PageHeader title="Question Bank & Lifecycle System" description="Manage questions, version history, AI enhancement toolbars, and difficulty balancing.">
-        <Button variant="outline" size="sm" onClick={() => toast.info('Navigating to Question Repository')}><Upload className="h-4 w-4 mr-1" /> Import Files</Button>
-        <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-1" /> Export Bank</Button>
+      <PageHeader title="Question Bank Directory" description="Search, filter, edit, view question history, and manage exam repository questions.">
         <CreateQuestionDialog onCreated={refetch} />
       </PageHeader>
 
-      <Tabs value={tab} onValueChange={setTab} className="w-full">
-        <TabsList>
-          <TabsTrigger value="list">All Questions & Version History</TabsTrigger>
-          <TabsTrigger value="lifecycle">Question Lifecycle Analytics</TabsTrigger>
-          <TabsTrigger value="folders">Folders</TabsTrigger>
-        </TabsList>
+      <div className="flex flex-col gap-4 sm:flex-row">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-9 glass-input"
+            placeholder="Search by question text or keyword..."
+            value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          />
+        </div>
+        <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-[160px] glass-input"><SelectValue placeholder="All Question Types" /></SelectTrigger>
+          <SelectContent className="glass-modal">
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="mcq">MCQ</SelectItem>
+            <SelectItem value="true_false">True / False</SelectItem>
+            <SelectItem value="fill_blank">Fill in Blank</SelectItem>
+            <SelectItem value="paragraph">Paragraph</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={diffFilter} onValueChange={(v) => { setDiffFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-[140px] glass-input"><SelectValue placeholder="All Difficulties" /></SelectTrigger>
+          <SelectContent className="glass-modal">
+            <SelectItem value="all">All Difficulties</SelectItem>
+            <SelectItem value="easy">Easy</SelectItem>
+            <SelectItem value="medium">Medium</SelectItem>
+            <SelectItem value="hard">Hard</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
-        <TabsContent value="list">
-          <div className="flex flex-col gap-4 sm:flex-row mt-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-9" placeholder="Search questions by keyword or tag..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+      <Card className="glass-card">
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="p-8 text-center text-muted-foreground flex items-center justify-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" /> Loading questions from PostgreSQL...
             </div>
-            <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-[160px]"><SelectValue placeholder="All types" /></SelectTrigger>
-              <SelectContent><SelectItem value="">All types</SelectItem>{questionTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-            </Select>
-            <Select value={difficultyFilter} onValueChange={(v) => { setDifficultyFilter(v); setPage(1); }}>
-              <SelectTrigger className="w-[140px]"><SelectValue placeholder="All difficulties" /></SelectTrigger>
-              <SelectContent><SelectItem value="">All difficulties</SelectItem>{difficulties.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-
-          <Card className="mt-4">
-            <CardContent className="p-0">
-              {isLoading ? (
-                <div className="p-8 text-center text-muted-foreground">Loading Question Bank...</div>
-              ) : !data?.items.length ? (
-                <div className="p-8"><EmptyState title="No questions found" description="Add questions manually or ingest via Question Repository." action={<CreateQuestionDialog onCreated={refetch} />} /></div>
-              ) : (
-                <>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Ver.</TableHead>
-                        <TableHead>Preview</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Difficulty</TableHead>
-                        <TableHead>Bloom</TableHead>
-                        <TableHead>Accuracy %</TableHead>
-                        <TableHead className="text-right">AI Toolbar & Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {data.items.map((q: QuestionRow) => (
-                        <TableRow key={q.id} className="hover:bg-muted/20">
-                          <TableCell><Badge variant="outline" className="font-mono text-xs">v{q.version ?? 1}</Badge></TableCell>
-                          <TableCell className="max-w-xs truncate font-medium">{q.text.slice(0, 75)}...</TableCell>
-                          <TableCell><Badge variant="outline" className="uppercase text-[10px]">{q.type}</Badge></TableCell>
-                          <TableCell><Badge variant={q.difficulty === 'easy' ? 'default' : q.difficulty === 'medium' ? 'secondary' : 'destructive'}>{q.difficulty}</Badge></TableCell>
-                          <TableCell>{q.bloomLevel ?? 'apply'}</TableCell>
-                          <TableCell className="font-bold text-emerald-600 dark:text-emerald-400">{q.accuracyRate ?? '74'}%</TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <Button variant="ghost" size="sm" onClick={() => setInspectedQuestion(q)}>
-                                <Sparkles className="h-4 w-4 text-amber-500 mr-1" /> AI Toolbar
-                              </Button>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onClick={() => setInspectedQuestion(q)}><Eye className="h-4 w-4 mr-2" /> Inspect Lifecycle</DropdownMenuItem>
-                                  <DropdownMenuItem className="text-destructive" onClick={() => { if (confirm('Delete this question?')) deleteQuestion.mutate(q.id); }}><Trash2 className="h-4 w-4 mr-2" /> Delete</DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  <div className="p-4"><DataTablePagination page={page} totalPages={data.totalPages} onPageChange={setPage} /></div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* AI TOOLBAR & LIFECYCLE DRAWER MODAL */}
-          {inspectedQuestion && (
-            <Card className="mt-6 border-amber-500/40 shadow-xl bg-card">
-              <CardHeader className="flex flex-row items-center justify-between border-b pb-3 bg-amber-500/5">
-                <div>
-                  <CardTitle className="text-base font-bold flex items-center gap-2">
-                    <Sparkles className="h-5 w-5 text-amber-500" /> AI Question Toolbar & Lifecycle Inspector (Version v{inspectedQuestion.version ?? 1})
-                  </CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Question ID: {inspectedQuestion.id} • Student Accuracy Rate: {inspectedQuestion.accuracyRate ?? 74}%
-                  </p>
-                </div>
-                <Button variant="ghost" size="sm" onClick={() => setInspectedQuestion(null)}>Close</Button>
-              </CardHeader>
-              <CardContent className="p-6 space-y-6">
-                <div className="p-4 rounded-xl bg-muted/40 border">
-                  <h4 className="font-bold text-base mb-1">{inspectedQuestion.text}</h4>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>Difficulty: <strong className="uppercase">{inspectedQuestion.difficulty}</strong></span>
-                    <span>Bloom Level: <strong className="uppercase">{inspectedQuestion.bloomLevel ?? 'apply'}</strong></span>
-                  </div>
-                </div>
-
-                {/* AI AI SUGGESTION BANNER */}
-                <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-700 dark:text-blue-300 text-xs flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Brain className="h-5 w-5 text-blue-600 shrink-0" />
-                    <div>
-                      <span className="font-bold">AI Adaptive Difficulty Suggestion:</span>
-                      <p>74% of students answered correctly in recent exams. AI recommends creating Version 2 with increased difficulty.</p>
-                    </div>
-                  </div>
-                  <Button size="sm" variant="outline" className="shrink-0" onClick={() => handleAiAction('Create Version 2 (Increased Difficulty)')}>
-                    Apply AI Suggestion →
-                  </Button>
-                </div>
-
-                {/* AI TOOLBAR BUTTON GRID */}
-                <div>
-                  <h4 className="text-xs font-bold uppercase text-muted-foreground mb-3">AI Enhancement Actions</h4>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    <Button variant="outline" size="sm" onClick={() => handleAiAction('Improve Grammar')}>
-                      <Wand2 className="h-3.5 w-3.5 mr-1.5 text-amber-500" /> Improve Grammar
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleAiAction('Generate Hint')}>
-                      <Sparkles className="h-3.5 w-3.5 mr-1.5 text-blue-500" /> Generate Hint
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleAiAction('Generate Explanation')}>
-                      <FileText className="h-3.5 w-3.5 mr-1.5 text-emerald-500" /> Generate Explanation
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleAiAction('Generate Similar Question')}>
-                      <Copy className="h-3.5 w-3.5 mr-1.5 text-purple-500" /> Similar Question
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleAiAction('Increase Difficulty')}>
-                      <ArrowUpRight className="h-3.5 w-3.5 mr-1.5 text-rose-500" /> Increase Difficulty
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => handleAiAction('Translate')}>
-                      <Languages className="h-3.5 w-3.5 mr-1.5 text-indigo-500" /> Translate Language
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+          ) : !data?.items.length ? (
+            <div className="p-8">
+              <EmptyState
+                title="No questions found in Question Bank"
+                description="Click 'Add Question' or upload question files in the Question Repository."
+                action={<CreateQuestionDialog onCreated={refetch} />}
+              />
+            </div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-b border-border/50">
+                    <TableHead>Question Text</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Difficulty</TableHead>
+                    <TableHead>Marks</TableHead>
+                    <TableHead>Version</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.items.map((q) => (
+                    <TableRow key={q.id} className="border-b border-border/40 hover:bg-white/30 dark:hover:bg-slate-800/30">
+                      <TableCell className="max-w-md font-medium text-xs">
+                        <div className="line-clamp-2">{q.text}</div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="uppercase text-[10px]">{q.type}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="uppercase text-[10px]">{q.difficulty}</Badge>
+                      </TableCell>
+                      <TableCell className="font-semibold text-xs">{q.marks}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="font-mono text-[10px]">v{q.version || 1}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="glass-modal">
+                            <DropdownMenuItem onClick={() => setViewQuestion(q)}>
+                              <Eye className="h-4 w-4 mr-2" /> View & History
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => {
+                                if (confirm("Are you sure you want to delete this question?")) {
+                                  deleteMutation.mutate(q.id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" /> Delete Question
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="p-4">
+                <DataTablePagination page={page} totalPages={data.totalPages} onPageChange={setPage} />
+              </div>
+            </>
           )}
-        </TabsContent>
+        </CardContent>
+      </Card>
 
-        <TabsContent value="lifecycle">
-          <Card>
-            <CardHeader><CardTitle className="text-base font-bold">Question Lifecycle Audit & Version History</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div className="p-4 rounded-xl border bg-muted/20 space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-foreground">Lifecycle Event: Version 1 Created</span>
-                  <span className="text-muted-foreground">Admin User • 2 days ago</span>
-                </div>
-                <p className="text-sm">Question created via PDF Ingestion parser in exam "Data Structures Mid-term".</p>
-                <div className="flex items-center gap-4 text-xs text-muted-foreground border-t pt-2">
-                  <span>Attempts: 120 Students</span>
-                  <span className="text-emerald-600 font-bold">Correct Accuracy: 74%</span>
+      {/* View Question Detail & Version History Dialog */}
+      {viewQuestion && (
+        <Dialog open={!!viewQuestion} onOpenChange={(b) => { if (!b) setViewQuestion(null); }}>
+          <DialogContent className="glass-modal max-h-[90vh] overflow-y-auto max-w-xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center justify-between">
+                <span>Question Detail</span>
+                <Badge variant="outline">Version {viewQuestion.version || 1}</Badge>
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 text-xs">
+              <div className="p-3 bg-muted/50 rounded-xl space-y-1">
+                <div className="font-semibold text-sm text-foreground">{viewQuestion.text}</div>
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <span>Type: <strong className="uppercase">{viewQuestion.type}</strong></span> |
+                  <span>Difficulty: <strong className="uppercase">{viewQuestion.difficulty}</strong></span> |
+                  <span>Marks: <strong>{viewQuestion.marks}</strong></span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
-        <TabsContent value="folders">
-          <Card><CardContent className="p-8 text-center"><FolderKanban className="h-10 w-10 text-muted-foreground/40 mx-auto mb-2" /><p className="text-sm font-semibold">Organize questions by Subject Folders</p></CardContent></Card>
-        </TabsContent>
-      </Tabs>
+              {viewQuestion.options && viewQuestion.options.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="font-semibold">Options</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {viewQuestion.options.map((opt, idx) => {
+                      const letter = String.fromCharCode(65 + idx);
+                      const isCorrect = viewQuestion.correctAnswers.includes(letter) || viewQuestion.correctAnswers.includes(opt);
+                      return (
+                        <div key={idx} className={`p-2 rounded-lg border ${isCorrect ? 'bg-emerald-50/80 border-emerald-300 text-emerald-800 font-bold' : 'bg-muted/40'}`}>
+                          {letter}. {opt}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {viewQuestion.explanation && (
+                <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl text-blue-800">
+                  <strong>Explanation:</strong> {viewQuestion.explanation}
+                </div>
+              )}
+
+              {/* Version History Log */}
+              <div className="space-y-2 pt-2 border-t border-border/50">
+                <h4 className="font-semibold flex items-center gap-1">
+                  <History className="h-4 w-4 text-primary" /> Question Version History
+                </h4>
+                <div className="space-y-2 max-h-36 overflow-y-auto">
+                  {viewQuestion.versions?.length ? (
+                    viewQuestion.versions.map((ver, idx) => (
+                      <div key={idx} className="p-2.5 border border-border/40 rounded-xl text-xs flex justify-between items-center bg-muted/20">
+                        <div>
+                          <div className="font-bold">Version {ver.version}</div>
+                          <div className="text-muted-foreground">{ver.changeSummary || 'Updated profile'}</div>
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">
+                          {new Date(ver.createdAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-muted-foreground italic">Version 1 (Initial creation)</div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setViewQuestion(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

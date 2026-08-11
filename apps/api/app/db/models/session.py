@@ -68,6 +68,20 @@ class ExamSession(Base, TimestampMixin):
         order_by="ViolationRecord.created_at",
     )
 
+    @property
+    def warnings(self) -> int:
+        return self.warning_count
+
+    @property
+    def termination_reason(self) -> str | None:
+        return self.terminate_reason
+
+    @property
+    def percentage(self) -> float | None:
+        if self.score is not None and self.exam and self.exam.total_marks > 0:
+            return round((self.score / self.exam.total_marks) * 100, 2)
+        return None
+
     __table_args__ = (
         Index("ix_sessions_student_exam_active", "student_id", "exam_id", "status"),
     )
@@ -83,6 +97,9 @@ class SessionAnswer(Base, TimestampMixin):
     question_id: Mapped[object] = mapped_column(
         guid(), ForeignKey("questions.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    selected_option_id: Mapped[object | None] = mapped_column(
+        guid(), ForeignKey("question_options.id"), index=True, nullable=True
+    )
     answer: Mapped[list] = mapped_column(JSON, default=list, nullable=False)  # normalized answer payload
     is_answered: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_correct: Mapped[bool | None] = mapped_column(nullable=True)
@@ -92,22 +109,34 @@ class SessionAnswer(Base, TimestampMixin):
 
     session = relationship("ExamSession", back_populates="answers")
     question = relationship("Question")
+    selected_option = relationship("QuestionOption")
+
+    @property
+    def attempt_id(self) -> object:
+        return self.session_id
+
+    @property
+    def answered_at(self) -> datetime:
+        return self.created_at
 
 
 class ViolationType(StrEnum):
-    FULLSCREEN_EXIT = "fullscreen_exit"
+    TAB_SWITCH = "tab_switch"
     TAB_CHANGE = "tab_change"
-    VISIBILITY_CHANGE = "visibility_change"
     WINDOW_BLUR = "window_blur"
+    FULLSCREEN_EXIT = "fullscreen_exit"
+    COPY_ATTEMPT = "copy_attempt"
+    PASTE_ATTEMPT = "paste_attempt"
+    RIGHT_CLICK = "right_click"
+    KEYBOARD_SHORTCUT = "keyboard_shortcut"
+    VISIBILITY_CHANGE = "visibility_change"
     WINDOW_MINIMIZE = "window_minimize"
     REFRESH = "refresh"
     BACK_NAVIGATION = "back_navigation"
-    RIGHT_CLICK = "right_click"
     COPY = "copy"
     PASTE = "paste"
     TEXT_SELECTION = "text_selection"
     DEVTOOLS = "devtools"
-    KEYBOARD_SHORTCUT = "keyboard_shortcut"
     MOUSE_LEAVE = "mouse_leave"
     NETWORK_DISCONNECT = "network_disconnect"
     RESIZE = "resize"
@@ -125,8 +154,17 @@ class ViolationRecord(Base, TimestampMixin):
     )
     warning_number: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    action_taken: Mapped[str | None] = mapped_column(String(200), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
     device_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     session = relationship("ExamSession", back_populates="violations")
+
+    @property
+    def description(self) -> str | None:
+        return self.reason
+
+    @property
+    def timestamp(self) -> datetime:
+        return self.created_at

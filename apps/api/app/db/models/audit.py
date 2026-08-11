@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.models.base import Base, guid, guid_pk
 
@@ -26,3 +26,18 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True, nullable=False
     )
+
+    actor = relationship("User")
+
+    @property
+    def target(self) -> str | None:
+        return self.entity_type
+
+    @property
+    def metadata_dict(self) -> dict | None:
+        return self.new_value
+
+    @property
+    def timestamp(self) -> datetime:
+        return self.created_at
+

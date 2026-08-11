@@ -11,6 +11,8 @@ import {
   History,
   Settings,
   User,
+  Layers,
+  Activity,
 } from 'lucide-react';
 import { ROLE_ROUTES } from '@/lib/constants';
 
@@ -18,6 +20,8 @@ export const ADMIN_NAV = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/students', label: 'Students', icon: Users },
   { href: '/admin/exams', label: 'Examinations', icon: FileQuestion },
+  { href: '/admin/exams/live', label: 'Live Monitoring', icon: Activity },
+  { href: '/admin/exams/blueprint', label: 'Exam Blueprint', icon: Layers },
   { href: '/admin/question-repository', label: 'Question Repository', icon: FolderArchive },
   { href: '/admin/question-bank', label: 'Question Bank', icon: FolderKanban },
   { href: '/admin/ai-generator', label: 'AI Generator', icon: Sparkles },

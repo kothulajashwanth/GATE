@@ -45,3 +45,17 @@ class Section(Base, TimestampMixin, SoftDeleteMixin):
 
     department = relationship("Department", back_populates="sections")
     semester = relationship("Semester")
+
+
+class Topic(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "topics"
+
+    id: Mapped[object] = guid_pk()
+    subject_id: Mapped[object] = mapped_column(
+        guid(), ForeignKey("subjects.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(160), index=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    subject = relationship("Subject", back_populates="topics")
+

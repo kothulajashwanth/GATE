@@ -65,7 +65,7 @@ export default function NotificationsPage() {
             id: '3',
             type: 'announcement',
             title: 'System Maintenance Notice',
-            body: 'ExamShield AI will undergo brief maintenance on Sunday from 2:00 AM to 3:00 AM UTC.',
+            body: 'GATE IGNITE will undergo brief maintenance on Sunday from 2:00 AM to 3:00 AM UTC.',
             isRead: true,
             createdAt: new Date(Date.now() - 172800000).toISOString(),
           },

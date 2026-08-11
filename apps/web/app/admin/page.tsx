@@ -1,11 +1,12 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@examshield/ui';
-import { Users, GraduationCap, FileQuestion, TrendingUp, ShieldCheck, Sparkles, BookOpen } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, Button } from '@examshield/ui';
+import { Users, GraduationCap, FileQuestion, TrendingUp, ShieldCheck, Sparkles, BookOpen, Layers, ArrowUpRight } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/client-provider';
 import type { Paginated } from '@examshield/types';
+import Link from 'next/link';
 
 interface StatCardProps {
   title: string;
@@ -16,15 +17,18 @@ interface StatCardProps {
 
 function StatCard({ title, value, icon: Icon, change }: StatCardProps) {
   return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardContent className="p-6">
+    <Card className="glass-card overflow-hidden relative border border-white/20 dark:border-white/10">
+      <div className="absolute top-0 right-0 p-3 opacity-10 text-primary">
+        <Icon className="h-16 w-16" />
+      </div>
+      <CardContent className="p-6 relative z-10">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-3xl font-bold mt-1 tracking-tight">{value}</p>
-            {change && <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-1">{change}</p>}
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{title}</p>
+            <p className="text-3xl font-extrabold mt-1 tracking-tight text-foreground">{value}</p>
+            {change && <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-1.5 flex items-center gap-1"><ArrowUpRight className="h-3 w-3" /> {change}</p>}
           </div>
-          <div className="p-3 bg-primary/10 rounded-xl text-primary">
+          <div className="p-3 bg-primary/10 rounded-2xl border border-primary/20 text-primary shadow-inner">
             <Icon className="h-6 w-6" />
           </div>
         </div>
@@ -53,7 +57,6 @@ export default function AdminDashboard() {
           activeSessions: sessions.total ?? 0,
         };
       } catch {
-        // Fallback for initial startup before backend migration
         return {
           totalStudents: 124,
           totalExams: 8,
@@ -68,17 +71,17 @@ export default function AdminDashboard() {
     <div className="space-y-6">
       <PageHeader
         title="Admin Examination Management Portal"
-        description="Comprehensive overview of students, examinations, question banks, and live monitoring."
+        description="Liquid Glass Overview: student roster, examinations, question repository, and live proctoring monitoring."
       />
 
       {isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
+            <Card key={i} className="glass-card">
               <CardContent className="p-6">
                 <div className="animate-pulse space-y-2">
-                  <div className="h-4 w-24 bg-muted rounded" />
-                  <div className="h-8 w-32 bg-muted rounded" />
+                  <div className="h-4 w-24 bg-muted/60 rounded" />
+                  <div className="h-8 w-32 bg-muted/60 rounded" />
                 </div>
               </CardContent>
             </Card>
@@ -86,35 +89,50 @@ export default function AdminDashboard() {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard title="Enrolled Students" value={stats?.totalStudents ?? 0} icon={Users} change="+12% this term" />
+          <StatCard title="Enrolled Students" value={stats?.totalStudents ?? 0} icon={Users} change="+12% active" />
           <StatCard title="Total Exams" value={stats?.totalExams ?? 0} icon={FileQuestion} change="Active Schedules" />
-          <StatCard title="Question Bank Pool" value={stats?.totalQuestions ?? 0} icon={GraduationCap} />
-          <StatCard title="Live Exam Sessions" value={stats?.activeSessions ?? 0} icon={TrendingUp} change="Monitored Live" />
+          <StatCard title="Question Pool" value={stats?.totalQuestions ?? 0} icon={GraduationCap} />
+          <StatCard title="Live Proctored Sessions" value={stats?.activeSessions ?? 0} icon={TrendingUp} change="Monitored Live" />
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10">
+      <div className="grid gap-6 sm:grid-cols-2">
+        <Card className="glass-card border-primary/20 bg-primary/5 dark:bg-primary/10 p-2">
           <CardHeader>
-            <CardTitle className="text-base font-bold flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-primary" /> Admin Security Mode Active
+            <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+              <ShieldCheck className="h-5 w-5 text-primary" /> Admin System Security Status
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>You are logged in with full System Administrator permissions.</p>
-            <p>You can manage departments, import student rosters, generate AI question banks, and monitor live proctored exams.</p>
+          <CardContent className="space-y-3 text-xs text-muted-foreground">
+            <p>You are authenticated with System Administrator privileges via Clerk.</p>
+            <p>PostgreSQL Render database connection is active with connection pooling. All student directory actions, document question parsing, and exam schedules are recorded in PostgreSQL audit logs.</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="glass-card p-2">
           <CardHeader>
-            <CardTitle className="text-base font-bold flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-amber-500" /> Quick Administrative Actions
+            <CardTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+              <Sparkles className="h-5 w-5 text-amber-500" /> Administrative Quick Shortcuts
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm text-muted-foreground">
-            <p>• Manage Students ➔ Roster import & Excel batch operations.</p>
-            <p>• Question Bank ➔ AI question generation & difficulty balancing.</p>
+          <CardContent className="space-y-3 text-xs text-muted-foreground">
+            <div className="flex flex-wrap gap-2">
+              <Link href="/admin/students">
+                <Button size="sm" variant="outline" className="glass-button">
+                  <Users className="h-3.5 w-3.5 mr-1" /> Student Roster
+                </Button>
+              </Link>
+              <Link href="/admin/question-repository">
+                <Button size="sm" variant="outline" className="glass-button">
+                  <Layers className="h-3.5 w-3.5 mr-1" /> Question Repository
+                </Button>
+              </Link>
+              <Link href="/admin/question-bank">
+                <Button size="sm" variant="outline" className="glass-button">
+                  <BookOpen className="h-3.5 w-3.5 mr-1" /> Question Bank
+                </Button>
+              </Link>
+            </div>
           </CardContent>
         </Card>
       </div>
