@@ -24,7 +24,7 @@ interface BlueprintRuleItem {
 interface AvailabilityRes {
   total_requested: number;
   total_available: number;
-  total_gap: int;
+  total_gap: number;
   rules_availability: {
     rule_index: number;
     topic: string;

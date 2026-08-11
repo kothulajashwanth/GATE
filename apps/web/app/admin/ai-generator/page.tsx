@@ -14,19 +14,19 @@ import {
 import { toast } from 'sonner';
 
 interface AIQuestionItem {
-  type: str;
-  text: str;
-  options?: str[] | null;
-  correct_answers: str[];
-  explanation?: str | null;
-  difficulty: str;
-  bloom_level?: str | null;
+  type: string;
+  text: string;
+  options?: string[] | null;
+  correct_answers: string[];
+  explanation?: string | null;
+  difficulty: string;
+  bloom_level?: string | null;
   marks: number;
   negative_marks: number;
-  topic?: str | null;
-  subject_id?: str | null;
+  topic?: string | null;
+  subject_id?: string | null;
   is_duplicate?: boolean;
-  status: str;
+  status: string;
 }
 
 export default function AiGeneratorPage() {

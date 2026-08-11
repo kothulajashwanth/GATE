@@ -99,3 +99,28 @@ async def get_student_me_analytics(
 
     svc = AnalyticsService(db)
     return await svc.get_student_personal_analytics(student.id)
+
+
+@router.get("/audit-logs", summary="Get recent system audit logs for admin")
+async def get_audit_logs(
+    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 50,
+) -> list[dict]:
+    from app.db.models.audit import AuditLog
+    stmt = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
+    res = await db.execute(stmt)
+    logs = res.scalars().all()
+    return [
+        {
+            "id": str(l.id),
+            "action": l.action,
+            "entityType": l.entity_type,
+            "entityId": str(l.entity_id) if l.entity_id else None,
+            "actorId": str(l.actor_id) if l.actor_id else None,
+            "actorEmail": l.actor.email if l.actor else "System",
+            "ipAddress": l.ip_address,
+            "createdAt": l.created_at.isoformat() if l.created_at else None,
+        }
+        for l in logs
+    ]
