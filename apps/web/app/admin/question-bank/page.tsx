@@ -118,7 +118,7 @@ function CreateQuestionDialog({ onCreated }: { onCreated: () => void }) {
           <div className="space-y-2">
             <Label>Question Text *</Label>
             <Textarea {...register('text')} placeholder="Enter full question text..." rows={3} className="glass-input" />
-            {errors.text && <p className="text-destructive">{errors.text.message}</p>}
+            {errors.text?.message && <p className="text-destructive">{String(errors.text.message)}</p>}
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
