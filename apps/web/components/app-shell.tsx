@@ -7,7 +7,7 @@ import { ShieldCheck, Menu, X, Sparkles } from 'lucide-react';
 import { cn } from '@examshield/utils';
 import { ThemeToggle } from './theme-toggle';
 import { APP_NAME } from '@/lib/constants';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export interface NavItem {
   href: string;
@@ -124,7 +124,7 @@ export function AppShell({ items, children, role }: AppShellProps) {
             </button>
             <div className="hidden sm:flex flex-col">
               <span className="text-xs font-bold text-foreground capitalize">
-                {pathname.split('/')[2] ? pathname.split('/')[2].replace('-', ' ') : 'Dashboard'}
+                {pathname?.split('/')[2] ? pathname.split('/')[2]?.replace('-', ' ') : 'Dashboard'}
               </span>
               <span className="text-[10px] text-muted-foreground font-mono">GATE IGNITE Platform</span>
             </div>

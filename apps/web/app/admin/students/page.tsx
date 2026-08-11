@@ -414,7 +414,7 @@ export default function StudentsPage() {
   const handleExport = async () => {
     try {
       toast.info('Generating Excel Roster download...');
-      const blob = await api.raw.download('/students/export', params);
+      const blob = await api.raw.download('/students/export', params as any);
       downloadBlob(blob, `student_roster_${new Date().toISOString().slice(0, 10)}.xlsx`);
       toast.success('Download completed!');
     } catch (e: any) {

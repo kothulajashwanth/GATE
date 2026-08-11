@@ -70,8 +70,8 @@ function CreateQuestionDialog({ onCreated }: { onCreated: () => void }) {
   const [optD, setOptD] = useState('');
   const [correctAns, setCorrectAns] = useState('A');
 
-  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<QuestionForm>({
-    resolver: zodResolver(questionSchema),
+  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<any>({
+    resolver: zodResolver(questionSchema) as any,
     defaultValues: {
       type: 'mcq',
       difficulty: 'medium',
@@ -114,7 +114,7 @@ function CreateQuestionDialog({ onCreated }: { onCreated: () => void }) {
           <DialogTitle>Add New Question</DialogTitle>
           <DialogDescription>Create a single question record in PostgreSQL Question Bank.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-4 text-xs">
+        <form onSubmit={handleSubmit((v: any) => mutation.mutate(v))} className="space-y-4 text-xs">
           <div className="space-y-2">
             <Label>Question Text *</Label>
             <Textarea {...register('text')} placeholder="Enter full question text..." rows={3} className="glass-input" />

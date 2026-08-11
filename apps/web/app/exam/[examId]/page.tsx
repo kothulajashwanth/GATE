@@ -374,7 +374,7 @@ export default function ExamPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-6 sm:grid-cols-10 gap-2">
                   {session.questions.map((q, idx) => {
-                    const isAns = answers[q.id]?.length > 0;
+                    const isAns = (answers[q.id]?.length ?? 0) > 0;
                     return (
                       <Button
                         key={q.id}
