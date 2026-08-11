@@ -3,6 +3,7 @@
   "framework": "nextjs",
   "buildCommand": "pnpm --filter @examshield/web build",
   "installCommand": "pnpm install --no-frozen-lockfile",
+  "outputDirectory": "apps/web/.next",
   "rewrites": [
     {
       "source": "/api/v1/:path*",
