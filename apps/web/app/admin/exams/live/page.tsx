@@ -33,7 +33,7 @@ interface LiveSessionRow {
 interface TimelineEvent {
   id: string;
   violationType: string;
-  warningNumber: int;
+  warningNumber: number;
   reason: string | null;
   createdAt: string;
 }

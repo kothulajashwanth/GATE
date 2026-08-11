@@ -15,9 +15,9 @@ interface PreflightRes {
   startAt: string;
   endAt: string;
   serverTime: string;
-  attemptCount: int;
-  maxAttempts: int;
-  remainingAttempts: int;
+  attemptCount: number;
+  maxAttempts: number;
+  remainingAttempts: number;
   activeSessionId: string | null;
   issues: string[];
 }

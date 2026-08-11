@@ -24,7 +24,7 @@ import type { Paginated } from '@examshield/types';
 
 interface QuestionVersionItem {
   version: number;
-  changeSummary?: str;
+  changeSummary?: string;
   createdAt: string;
 }
 

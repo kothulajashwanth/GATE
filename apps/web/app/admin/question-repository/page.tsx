@@ -37,8 +37,8 @@ interface ParsedQuestionItem {
   marks: number;
   difficulty: string;
   explanation?: string;
-  subject_code?: str;
-  topic_name?: str;
+  subject_code?: string;
+  topic_name?: string;
   status: string;
   is_duplicate?: boolean;
   duplicate_of_id?: string;
