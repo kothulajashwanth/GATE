@@ -45,9 +45,14 @@ def _row(student: Student) -> StudentRow:
     )
 
 
+import logging
+
+logger = logging.getLogger("app")
+
+
 @router.get("", response_model=PaginatedResponse[StudentRow], summary="List/search students")
 async def list_students(
-    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
     page: PageParams = 1,
     page_size: PaginateParams = 20,
@@ -57,6 +62,9 @@ async def list_students(
     section_id: str | None = None,
     is_active: bool | None = None,
 ) -> PaginatedResponse[StudentRow]:
+    logger.info(f"[STUDENTS] REQUEST RECEIVED: page={page}, page_size={page_size}")
+    logger.info(f"[STUDENTS] AUTHENTICATION PASSED: user_id={actor.id}, email={actor.email}, role={actor.role}")
+    logger.info("[STUDENTS] STARTING DATABASE QUERY")
     rows, total = await StudentService(db).list(
         query=query,
         department_id=department_id,
@@ -66,7 +74,9 @@ async def list_students(
         page=page,
         page_size=page_size,
     )
+    logger.info(f"[STUDENTS] DATABASE QUERY COMPLETED: count={total}")
     items = [StudentRow(**row) for row in rows]
+    logger.info("[STUDENTS] RETURNING STUDENTS RESPONSE")
     return PaginatedResponse.build(items, page, page_size, total)
 
 

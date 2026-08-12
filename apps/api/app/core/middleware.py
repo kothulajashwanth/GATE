@@ -25,22 +25,23 @@ class TrailingSlashAndCorsMiddleware(BaseHTTPMiddleware):
         if path != "/" and path.endswith("/"):
             request.scope["path"] = path.rstrip("/")
 
+        settings = get_settings()
+        origin = request.headers.get("origin")
+
+        allowed = settings.cors_origins
+        is_allowed = False
+        if origin:
+            if origin in allowed or "*" in allowed:
+                is_allowed = True
+            elif re.match(r"^https://[a-zA-Z0-9-]+\.vercel\.app$", origin):
+                is_allowed = True
+            elif origin.endswith(".vercel.app"):
+                is_allowed = True
+
+        cors_origin = origin if (is_allowed and origin) else "https://fabgate.vercel.app"
+
         # Intercept preflight OPTIONS requests directly
         if request.method == "OPTIONS":
-            settings = get_settings()
-            origin = request.headers.get("origin")
-
-            allowed = settings.cors_origins
-            is_allowed = False
-            if origin:
-                if origin in allowed or "*" in allowed:
-                    is_allowed = True
-                elif re.match(r"^https://[a-zA-Z0-9-]+\.vercel\.app$", origin):
-                    is_allowed = True
-                elif origin.endswith(".vercel.app"):
-                    is_allowed = True
-
-            cors_origin = origin if (is_allowed and origin) else "https://fabgate.vercel.app"
             req_headers = request.headers.get(
                 "access-control-request-headers",
                 "Authorization, Content-Type, X-Request-Id, X-Internal-Key, Accept, Origin, X-Requested-With",
@@ -55,7 +56,24 @@ class TrailingSlashAndCorsMiddleware(BaseHTTPMiddleware):
             }
             return Response(status_code=200, headers=headers)
 
-        return await call_next(request)
+        # For non-OPTIONS requests, execute call_next and attach CORS headers to the response
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            import logging
+            logging.getLogger("app").exception(f"Unhandled exception in request processing: {exc}")
+            response = JSONResponse(
+                status_code=500,
+                content={"error": {"code": "internal_error", "message": str(exc)}},
+            )
+
+        if origin or is_allowed:
+            response.headers["Access-Control-Allow-Origin"] = cors_origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["Access-Control-Expose-Headers"] = "X-Request-Id, X-Response-Time-Ms"
+
+        return response
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
