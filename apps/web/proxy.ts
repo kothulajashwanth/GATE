@@ -38,7 +38,6 @@ export default clerkMiddleware(async (auth, req) => {
   }
 
   const { userId, sessionClaims } = await auth();
-  const { pathname } = req.nextUrl;
 
   // 1. Unauthenticated users on public routes -> allow access
   if (!userId && isPublicRoute(req)) {
