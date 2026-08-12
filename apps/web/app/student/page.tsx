@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@examshield/ui';
 import { FileQuestion, Trophy, Clock, Award, Calendar, CheckCircle, AlertCircle, ArrowRight } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
+import { useAuth } from '@clerk/nextjs';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/client-provider';
 import { formatDateTime, formatDuration } from '@examshield/utils';
@@ -94,15 +95,20 @@ function UpcomingExamCard({ exam }: { exam: ExamPreview }) {
 
 export default function StudentDashboard() {
   const api = useApiClient();
+  const { isLoaded, isSignedIn } = useAuth();
 
   const { data: examsData, isLoading: loadingExams } = useQuery({
-    queryKey: ['student', 'exams'],
+    queryKey: ['student', 'exams', isLoaded, isSignedIn],
     queryFn: () => api.get<Paginated<ExamPreview>>('/student/exams/upcoming', { page_size: 5, page: 1 }),
+    enabled: isLoaded && isSignedIn,
+    retry: 2,
   });
 
   const { data: resultsData, isLoading: loadingResults } = useQuery({
-    queryKey: ['student', 'results'],
+    queryKey: ['student', 'results', isLoaded, isSignedIn],
     queryFn: () => api.get<Paginated<ResultRow>>('/results', { page_size: 5, page: 1 }),
+    enabled: isLoaded && isSignedIn,
+    retry: 2,
   });
 
   const exams = examsData?.items ?? [];

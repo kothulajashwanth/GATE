@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useAuth } from '@clerk/nextjs';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/client-provider';
 import { PageHeader } from '@/components/page-header';
@@ -43,12 +44,15 @@ interface ExamPreview {
 
 export default function UpcomingExamsPage() {
   const api = useApiClient();
+  const { isLoaded, isSignedIn } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'live' | 'upcoming'>('all');
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['student', 'exams', 'upcoming'],
+    queryKey: ['student', 'exams', 'upcoming', isLoaded, isSignedIn],
     queryFn: () => api.get<Paginated<ExamPreview>>('/student/exams/upcoming', { page_size: 50 }),
+    enabled: isLoaded && isSignedIn,
+    retry: 2,
   });
 
   const rawExams = data?.items ?? [];
