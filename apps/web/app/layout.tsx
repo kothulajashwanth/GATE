@@ -18,6 +18,11 @@ export const metadata: Metadata = {
     'GATE IGNITE — Secure AI-powered examination and assessment platform for GATE preparation.',
   keywords: ['online exams', 'proctoring', 'question bank', 'college', 'examination management'],
   robots: { index: true, follow: true },
+  icons: {
+    icon: '/icon.svg',
+    shortcut: '/icon.svg',
+    apple: '/icon.svg',
+  },
 };
 
 export const viewport: Viewport = {

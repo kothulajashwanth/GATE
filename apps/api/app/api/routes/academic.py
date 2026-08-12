@@ -83,6 +83,33 @@ async def create_department(
     return _dept(dept)
 
 
+@router.get("/semesters", response_model=list[SemesterOut], summary="List all semesters")
+async def list_all_semesters(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    department_id: str | None = None,
+) -> list[SemesterOut]:
+    if department_id:
+        rows = await SemesterRepository(db).list_by_department(department_id)
+    else:
+        rows = await SemesterRepository(db).list(limit=200)
+    return [_sem(s) for s in rows]
+
+
+@router.get("/sections", response_model=list[SectionOut], summary="List all sections")
+async def list_all_sections(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    department_id: str | None = None,
+    semester_id: str | None = None,
+) -> list[SectionOut]:
+    if semester_id:
+        rows = await SectionRepository(db).list_by_semester(semester_id)
+    elif department_id:
+        rows = await SectionRepository(db).list_by_department(department_id)
+    else:
+        rows = await SectionRepository(db).list(limit=200)
+    return [_sec(s) for s in rows]
+
+
 @router.get("/departments/{department_id}/semesters", response_model=list[SemesterOut])
 async def list_semesters(
     department_id: str,
@@ -108,3 +135,4 @@ async def list_sections_by_semester(
 ) -> list[SectionOut]:
     rows = await SectionRepository(db).list_by_semester(semester_id)
     return [_sec(s) for s in rows]
+

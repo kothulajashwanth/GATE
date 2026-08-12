@@ -1,7 +1,8 @@
+import re
 import time
 import uuid
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
@@ -9,6 +10,50 @@ from starlette.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.errors import RateLimitError
 from app.db.redis import get_redis
+
+
+class TrailingSlashAndCorsMiddleware(BaseHTTPMiddleware):
+    """
+    1. Normalizes trailing slashes in-place so FastAPI routing matches without issuing 301/307 redirects.
+    2. Intercepts OPTIONS preflight requests to guarantee a 200 OK response with correct CORS headers,
+       preventing any downstream middleware or routing from triggering a preflight redirect error.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        # Normalize trailing slash in-place
+        path = request.scope.get("path", "")
+        if path != "/" and path.endswith("/"):
+            request.scope["path"] = path.rstrip("/")
+
+        # Intercept preflight OPTIONS requests directly
+        if request.method == "OPTIONS":
+            settings = get_settings()
+            origin = request.headers.get("origin")
+
+            allowed = settings.cors_origins
+            is_allowed = False
+            if origin:
+                if origin in allowed or "*" in allowed:
+                    is_allowed = True
+                elif re.match(r"https://.*\.vercel\.app$", origin):
+                    is_allowed = True
+
+            cors_origin = origin if (is_allowed and origin) else "https://fabgate.vercel.app"
+            req_headers = request.headers.get(
+                "access-control-request-headers",
+                "Authorization, Content-Type, X-Request-Id, X-Internal-Key, Accept, Origin, X-Requested-With",
+            )
+
+            headers = {
+                "Access-Control-Allow-Origin": cors_origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": req_headers,
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Max-Age": "600",
+            }
+            return Response(status_code=200, headers=headers)
+
+        return await call_next(request)
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
@@ -64,6 +109,7 @@ def setup_middleware(app: FastAPI) -> None:
 
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(TrailingSlashAndCorsMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -74,3 +120,4 @@ def setup_middleware(app: FastAPI) -> None:
         expose_headers=["X-Request-Id", "X-Response-Time-Ms"],
         max_age=600,
     )
+
