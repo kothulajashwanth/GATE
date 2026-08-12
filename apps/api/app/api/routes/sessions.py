@@ -48,9 +48,15 @@ class AdminTerminateRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+import logging
+
+logger = logging.getLogger("app")
+
+
 def _session_out(s: ExamSession, student: Student | None = None) -> SessionOut:
     sec_status = "NORMAL"
-    if s.status == SessionStatus.TERMINATED:
+    status_str = s.status.value if hasattr(s.status, "value") else str(s.status)
+    if status_str == SessionStatus.TERMINATED.value or status_str == "TERMINATED":
         sec_status = "TERMINATED"
     elif s.warning_count >= 2:
         sec_status = "HIGH_RISK"
@@ -63,10 +69,10 @@ def _session_out(s: ExamSession, student: Student | None = None) -> SessionOut:
         studentId=str(s.student_id),
         studentRollNumber=student.roll_number if student else None,
         studentName=student.user.full_name if (student and student.user) else None,
-        status=s.status.value,
-        startedAt=s.started_at.isoformat(),
+        status=status_str,
+        startedAt=s.started_at.isoformat() if s.started_at else "",
         submittedAt=s.submitted_at.isoformat() if s.submitted_at else None,
-        deadlineAt=s.deadline_at.isoformat(),
+        deadlineAt=s.deadline_at.isoformat() if s.deadline_at else "",
         warningCount=s.warning_count,
         score=s.score,
         timeSpentSeconds=s.time_spent_seconds,
@@ -76,13 +82,16 @@ def _session_out(s: ExamSession, student: Student | None = None) -> SessionOut:
 
 @router.get("", response_model=PaginatedResponse[SessionOut], summary="List exam sessions (live monitoring)")
 async def list_sessions(
-    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = 1,
     page_size: int = 20,
     session_status: str | None = None,
     exam_id: str | None = None,
 ) -> PaginatedResponse[SessionOut]:
+    logger.info(f"[EXAM_SESSIONS] REQUEST RECEIVED: page={page}, page_size={page_size}")
+    logger.info(f"[EXAM_SESSIONS] AUTHENTICATION PASSED: user_id={actor.id}, email={actor.email}, role={actor.role}")
+    logger.info("[EXAM_SESSIONS] STARTING DATABASE QUERY")
     base = select(ExamSession).order_by(ExamSession.started_at.desc())
     if session_status and session_status != "all":
         try:

@@ -97,19 +97,36 @@ def _question_out(q: Question) -> QuestionOut:
             version=v.version,
             changeSummary=v.change_summary,
             createdAt=v.created_at.isoformat(),
+import logging
+
+logger = logging.getLogger("app")
+
+
+def _question_out(q: Question) -> QuestionOut:
+    versions_out = [
+        QuestionVersionOut(
+            id=str(v.id),
+            questionId=str(v.question_id),
+            version=v.version,
+            text=v.text,
+            options=v.options,
+            correctAnswers=v.correct_answers,
+            explanation=v.explanation,
+            changedBy=str(v.changed_by) if v.changed_by else None,
+            createdAt=v.created_at.isoformat() if v.created_at else datetime.now(UTC).isoformat(),
         )
         for v in getattr(q, "versions", [])
     ]
     return QuestionOut(
         id=str(q.id),
-        type=q.type.value,
+        type=q.type.value if hasattr(q.type, "value") else (str(q.type) if q.type else "mcq"),
         text=q.text,
         options=q.options,
         correctAnswers=q.correct_answers,
         explanation=q.explanation,
         hint=q.hint,
-        difficulty=q.difficulty.value,
-        bloomLevel=q.bloom_level.value if q.bloom_level else None,
+        difficulty=q.difficulty.value if hasattr(q.difficulty, "value") else (str(q.difficulty) if q.difficulty else "medium"),
+        bloomLevel=q.bloom_level.value if hasattr(q.bloom_level, "value") else (str(q.bloom_level) if q.bloom_level else None),
         tags=q.tags or [],
         marks=q.marks,
         negativeMarks=q.negative_marks,
@@ -121,13 +138,13 @@ def _question_out(q: Question) -> QuestionOut:
         isAiGenerated=q.is_ai_generated,
         version=q.version,
         versions=versions_out,
-        createdAt=q.created_at.isoformat(),
+        createdAt=q.created_at.isoformat() if q.created_at else datetime.now(UTC).isoformat(),
     )
 
 
 @router.get("", response_model=PaginatedResponse[QuestionOut], summary="List questions")
 async def list_questions(
-    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = 1,
     page_size: int = 20,
@@ -137,6 +154,9 @@ async def list_questions(
     subject_id: str | None = None,
     topic: str | None = None,
 ) -> PaginatedResponse[QuestionOut]:
+    logger.info(f"[QUESTIONS] REQUEST RECEIVED: page={page}, page_size={page_size}")
+    logger.info(f"[QUESTIONS] AUTHENTICATION PASSED: user_id={actor.id}, email={actor.email}, role={actor.role}")
+    logger.info("[QUESTIONS] STARTING DATABASE QUERY")
     base = select(Question).where(Question.deleted_at.is_(None)).options(selectinload(Question.versions)).order_by(Question.created_at.desc())
     if search:
         base = base.where(Question.text.ilike(f"%{search}%"))

@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import require_roles
+from app.core.auth import get_current_user, require_roles
 from app.core.errors import BadRequestError, ForbiddenError, NotFoundError
 from app.db.models.exam import Exam
 from app.db.models.result import ExamResult, ResultStatus
@@ -44,9 +44,48 @@ def _result_out(r: ExamResult, student: Student | None = None) -> ResultOut:
         rank=r.rank,
         isPassed=r.is_passed,
         status=r.status.value,
-        publishedAt=r.published_at,
         questionAnalysis=r.question_analysis,
     )
+
+
+@router.get("", response_model=PaginatedResponse[ResultOut], summary="List results")
+async def list_results(
+    actor: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = 1,
+    page_size: int = 20,
+    exam_id: str | None = None,
+    result_status: str | None = None,
+) -> PaginatedResponse[ResultOut]:
+    base = select(ExamResult).order_by(ExamResult.created_at.desc())
+    if actor.role == Role.STUDENT:
+        student_result = await db.execute(select(Student).where(Student.user_id == actor.id))
+        student = student_result.scalar_one_or_none()
+        if student:
+            base = base.where(ExamResult.student_id == student.id, ExamResult.status == ResultStatus.PUBLISHED)
+        else:
+            return PaginatedResponse(items=[], page=page, pageSize=page_size, total=0, totalPages=0)
+    else:
+        if result_status and result_status != "all":
+            try:
+                base = base.where(ExamResult.status == ResultStatus(result_status))
+            except ValueError:
+                pass
+
+    if exam_id:
+        base = base.where(ExamResult.exam_id == exam_id)
+
+    total = int((await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one())
+    res = await db.execute(base.limit(page_size).offset((page - 1) * page_size))
+    results_list = res.scalars().all()
+
+    items = []
+    for r in results_list:
+        student = (await db.execute(select(Student).where(Student.id == r.student_id))).scalar_one_or_none()
+        items.append(_result_out(r, student))
+
+    total_pages = (total + page_size - 1) // page_size if total else 0
+    return PaginatedResponse(items=items, page=page, pageSize=page_size, total=total, totalPages=total_pages)
 
 
 @router.get("/me", response_model=PaginatedResponse[ResultOut], summary="My published results")

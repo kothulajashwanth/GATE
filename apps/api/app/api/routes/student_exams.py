@@ -66,11 +66,11 @@ def _exam_preview(exam: Exam) -> dict:
     return {
         "id": str(exam.id),
         "title": exam.title,
-        "subject": {"name": exam.subject.name} if exam.subject else None,
-        "startAt": exam.start_at.isoformat(),
-        "endAt": exam.end_at.isoformat(),
+        "subject": {"name": exam.subject.name} if getattr(exam, "subject", None) else None,
+        "startAt": exam.start_at.isoformat() if exam.start_at else "",
+        "endAt": exam.end_at.isoformat() if exam.end_at else "",
         "durationMinutes": exam.duration_minutes,
-        "status": exam.status.value,
+        "status": exam.status.value if hasattr(exam.status, "value") else str(exam.status),
     }
 
 
@@ -83,7 +83,7 @@ async def _student_or_404(db: AsyncSession, user_id) -> Student:
         student = Student(
             user_id=user_id,
             roll_number=f"STU-{str(user_id)[:8].upper()}",
-            first_name=user.email.split('@')[0].capitalize() if user else "Student",
+            first_name=user.email.split('@')[0].capitalize() if (user and user.email) else "Student",
             last_name="Account",
             email=user.email if user else f"student-{user_id}@gateignite.local",
             is_active=True,
@@ -101,15 +101,19 @@ async def student_upcoming_exams(
     page: int = 1,
     page_size: int = 20,
 ) -> PaginatedResponse[dict]:
-    now = datetime.now(UTC)
+    now_naive = datetime.now(UTC).replace(tzinfo=None)
     await _student_or_404(db, user.id)
 
     base = (
         select(Exam)
         .options(selectinload(Exam.subject))
         .where(
-            Exam.status == ExamStatus.PUBLISHED,
-            Exam.end_at > now,
+            or_(
+                Exam.status == ExamStatus.PUBLISHED,
+                Exam.status == ExamStatus.SCHEDULED,
+                Exam.status == ExamStatus.LIVE,
+            ),
+            or_(Exam.end_at > now_naive, Exam.end_at.is_(None)),
             Exam.deleted_at.is_(None),
         )
         .order_by(Exam.start_at)

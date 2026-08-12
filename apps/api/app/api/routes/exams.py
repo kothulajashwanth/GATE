@@ -31,6 +31,11 @@ VALID_TRANSITIONS: dict[ExamStatus, set[ExamStatus]] = {
 }
 
 
+import logging
+
+logger = logging.getLogger("app")
+
+
 def _exam_out(exam: Exam) -> ExamOut:
     return ExamOut(
         id=str(exam.id),
@@ -46,10 +51,10 @@ def _exam_out(exam: Exam) -> ExamOut:
         randomizeQuestions=exam.randomize_questions,
         shuffleOptions=exam.shuffle_options,
         attemptLimit=exam.attempt_limit,
-        questionMode=exam.question_mode.value,
+        questionMode=exam.question_mode.value if hasattr(exam.question_mode, "value") else (str(exam.question_mode) if exam.question_mode else "MANUAL"),
         instructions=exam.instructions,
         visibility=exam.visibility,
-        status=exam.status.value,
+        status=exam.status.value if hasattr(exam.status, "value") else (str(exam.status) if exam.status else "DRAFT"),
         totalMarks=exam.total_marks,
         securityMode=exam.security_mode,
         cameraProctoringEnabled=exam.camera_proctoring_enabled,
@@ -88,12 +93,15 @@ class StatusTransitionRequest(BaseModel):
 
 @router.get("", response_model=PaginatedResponse[ExamOut], summary="List exams")
 async def list_exams(
-    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = 1,
     page_size: int = 20,
     exam_status: str | None = None,
 ) -> PaginatedResponse[ExamOut]:
+    logger.info(f"[EXAMS] REQUEST RECEIVED: page={page}, page_size={page_size}")
+    logger.info(f"[EXAMS] AUTHENTICATION PASSED: user_id={actor.id}, email={actor.email}, role={actor.role}")
+    logger.info("[EXAMS] STARTING DATABASE QUERY")
     base = select(Exam).where(Exam.deleted_at.is_(None)).order_by(Exam.created_at.desc())
     if exam_status and exam_status != "all":
         try:
@@ -105,7 +113,9 @@ async def list_exams(
     total = int((await db.execute(count_stmt)).scalar_one())
     result = await db.execute(base.limit(page_size).offset((page - 1) * page_size))
     items = [_exam_out(e) for e in result.scalars().all()]
+    logger.info(f"[EXAMS] DATABASE QUERY COMPLETED: count={total}")
     total_pages = (total + page_size - 1) // page_size if total else 0
+    logger.info("[EXAMS] RETURNING EXAMS RESPONSE")
     return PaginatedResponse(items=items, page=page, pageSize=page_size, total=total, totalPages=total_pages)
 
 
