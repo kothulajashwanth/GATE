@@ -97,7 +97,7 @@ export default function StudentDashboard() {
 
   const { data: examsData, isLoading: loadingExams } = useQuery({
     queryKey: ['student', 'exams'],
-    queryFn: () => api.get<Paginated<ExamPreview>>('/exams', { page_size: 5, page: 1 }),
+    queryFn: () => api.get<Paginated<ExamPreview>>('/student/exams/upcoming', { page_size: 5, page: 1 }),
   });
 
   const { data: resultsData, isLoading: loadingResults } = useQuery({
@@ -121,7 +121,7 @@ export default function StudentDashboard() {
       />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Available Exams" value={exams.length} icon={FileQuestion} href="/student/exams" />
+        <StatCard title="Available Exams" value={exams.length} icon={FileQuestion} href="/student/exams/upcoming" />
         <StatCard title="Exams Completed" value={results.length} icon={CheckCircle} href="/student/results" />
         <StatCard title="Passed Exams" value={passedCount} icon={Trophy} />
         <StatCard title="Average Score" value={`${avgPercentage}%`} icon={Award} />

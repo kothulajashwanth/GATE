@@ -69,9 +69,9 @@ export default function CreateExamWizardPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Queries
-  const { data: subjects = [] } = useQuery<{ id: string; name: string }[]>({
+  const { data: subjects = [] } = useQuery<{ id: string; name: string; code: string }[]>({
     queryKey: ['subjects'],
-    queryFn: () => api.get<{ id: string; name: string }[]>('/question-bank/subjects'),
+    queryFn: () => api.get<{ id: string; name: string; code: string }[]>('/question-bank/subjects'),
   });
 
   const { data: departments = [] } = useQuery<{ id: string; name: string }[]>({
@@ -263,11 +263,15 @@ export default function CreateExamWizardPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Subject</Label>
+                    <Label>GATE Paper / Subject *</Label>
                     <Select value={subjectId} onValueChange={setSubjectId}>
-                      <SelectTrigger className="glass-input"><SelectValue placeholder="Select Subject" /></SelectTrigger>
+                      <SelectTrigger className="glass-input"><SelectValue placeholder="Select GATE Paper / Subject" /></SelectTrigger>
                       <SelectContent className="glass-modal">
-                        {subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                        {subjects.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.code} — {s.name}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

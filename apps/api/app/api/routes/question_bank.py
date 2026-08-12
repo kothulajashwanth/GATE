@@ -76,9 +76,59 @@ def _file_out(uf: UploadedFile) -> UploadedFileOut:
     )
 
 
-@router.get("/subjects", response_model=list[SubjectOut], summary="List subjects")
+GATE_SUBJECTS = [
+    {"code": "GA", "name": "General Aptitude", "description": "GATE General Aptitude Paper"},
+    {"code": "AE", "name": "Aerospace Engineering", "description": "GATE Aerospace Engineering Paper"},
+    {"code": "AG", "name": "Agricultural Engineering", "description": "GATE Agricultural Engineering Paper"},
+    {"code": "AR", "name": "Architecture and Planning", "description": "GATE Architecture and Planning Paper"},
+    {"code": "BM", "name": "Biomedical Engineering", "description": "GATE Biomedical Engineering Paper"},
+    {"code": "BT", "name": "Biotechnology", "description": "GATE Biotechnology Paper"},
+    {"code": "CE", "name": "Civil Engineering", "description": "GATE Civil Engineering Paper"},
+    {"code": "CH", "name": "Chemical Engineering", "description": "GATE Chemical Engineering Paper"},
+    {"code": "CS", "name": "Computer Science and Information Technology", "description": "GATE Computer Science and Information Technology Paper"},
+    {"code": "CY", "name": "Chemistry", "description": "GATE Chemistry Paper"},
+    {"code": "DA", "name": "Data Science and Artificial Intelligence", "description": "GATE Data Science and Artificial Intelligence Paper"},
+    {"code": "EC", "name": "Electronics and Communication Engineering", "description": "GATE Electronics and Communication Engineering Paper"},
+    {"code": "EE", "name": "Electrical Engineering", "description": "GATE Electrical Engineering Paper"},
+    {"code": "ES", "name": "Environmental Science and Engineering", "description": "GATE Environmental Science and Engineering Paper"},
+    {"code": "EY", "name": "Ecology and Evolution", "description": "GATE Ecology and Evolution Paper"},
+    {"code": "GG", "name": "Geology and Geophysics", "description": "GATE Geology and Geophysics Paper"},
+    {"code": "IN", "name": "Instrumentation Engineering", "description": "GATE Instrumentation Engineering Paper"},
+    {"code": "MA", "name": "Mathematics", "description": "GATE Mathematics Paper"},
+    {"code": "ME", "name": "Mechanical Engineering", "description": "GATE Mechanical Engineering Paper"},
+    {"code": "MN", "name": "Mining Engineering", "description": "GATE Mining Engineering Paper"},
+    {"code": "MT", "name": "Metallurgical Engineering", "description": "GATE Metallurgical Engineering Paper"},
+    {"code": "NM", "name": "Naval Architecture and Ocean Engineering", "description": "GATE Naval Architecture and Ocean Engineering Paper"},
+    {"code": "PE", "name": "Petroleum Engineering", "description": "GATE Petroleum Engineering Paper"},
+    {"code": "PH", "name": "Physics", "description": "GATE Physics Paper"},
+    {"code": "PI", "name": "Production and Industrial Engineering", "description": "GATE Production and Industrial Engineering Paper"},
+    {"code": "ST", "name": "Statistics", "description": "GATE Statistics Paper"},
+    {"code": "TF", "name": "Textile Engineering and Fibre Science", "description": "GATE Textile Engineering and Fibre Science Paper"},
+    {"code": "XE", "name": "Engineering Sciences", "description": "GATE Engineering Sciences Paper"},
+    {"code": "XH", "name": "Humanities and Social Sciences", "description": "GATE Humanities and Social Sciences Paper"},
+    {"code": "XL", "name": "Life Sciences", "description": "GATE Life Sciences Paper"},
+]
+
+
+@router.get("/subjects", response_model=list[SubjectOut], summary="List subjects (Auto-seeded GATE Papers)")
 async def list_subjects(db: Annotated[AsyncSession, Depends(get_db)]) -> list[SubjectOut]:
-    result = await db.execute(select(Subject).where(Subject.deleted_at.is_(None)).order_by(Subject.name).limit(200))
+    existing_res = await db.execute(select(Subject.code).where(Subject.deleted_at.is_(None)))
+    existing_codes = set(existing_res.scalars().all())
+
+    new_subjects = []
+    for g_sub in GATE_SUBJECTS:
+        if g_sub["code"] not in existing_codes:
+            new_subjects.append(Subject(
+                code=g_sub["code"],
+                name=g_sub["name"],
+                description=g_sub["description"]
+            ))
+
+    if new_subjects:
+        db.add_all(new_subjects)
+        await db.commit()
+
+    result = await db.execute(select(Subject).where(Subject.deleted_at.is_(None)).order_by(Subject.code).limit(200))
     return [SubjectOut(id=str(s.id), name=s.name, code=s.code, description=s.description, departmentId=str(s.department_id) if s.department_id else None) for s in result.scalars().all()]
 
 

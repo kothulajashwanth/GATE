@@ -50,9 +50,9 @@ export default function AiGeneratorPage() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editQuestion, setEditQuestion] = useState<AIQuestionItem | null>(null);
 
-  const { data: subjects = [] } = useQuery<{ id: string; name: string }[]>({
+  const { data: subjects = [] } = useQuery<{ id: string; name: string; code: string }[]>({
     queryKey: ['subjects'],
-    queryFn: () => api.get<{ id: string; name: string }[]>('/question-bank/subjects'),
+    queryFn: () => api.get<{ id: string; name: string; code: string }[]>('/question-bank/subjects'),
   });
 
   const { data: files = [] } = useQuery<{ id: string; originalName: string }[]>({
@@ -193,12 +193,12 @@ export default function AiGeneratorPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Subject</Label>
+                <Label>GATE Subject / Paper</Label>
                 <Select value={subjectId} onValueChange={setSubjectId}>
-                  <SelectTrigger className="glass-input"><SelectValue placeholder="Select Subject" /></SelectTrigger>
+                  <SelectTrigger className="glass-input"><SelectValue placeholder="Select GATE Subject" /></SelectTrigger>
                   <SelectContent className="glass-modal">
                     <SelectItem value="none">General / Unassigned</SelectItem>
-                    {subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    {subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.code} — {s.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

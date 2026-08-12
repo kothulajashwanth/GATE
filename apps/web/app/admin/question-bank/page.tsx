@@ -81,9 +81,9 @@ function CreateQuestionDialog({ onCreated }: { onCreated: () => void }) {
     },
   });
 
-  const { data: subjects } = useQuery<{ id: string; name: string }[]>({
+  const { data: subjects } = useQuery<{ id: string; name: string; code: string }[]>({
     queryKey: ['subjects'],
-    queryFn: () => api.get<{ id: string; name: string }[]>('/question-bank/subjects'),
+    queryFn: () => api.get<{ id: string; name: string; code: string }[]>('/question-bank/subjects'),
   });
 
   const mutation = useMutation({
@@ -268,6 +268,17 @@ export default function QuestionBankPage() {
             <SelectItem value="easy">Easy</SelectItem>
             <SelectItem value="medium">Medium</SelectItem>
             <SelectItem value="hard">Hard</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={subjectFilter} onValueChange={(v) => { setSubjectFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-[180px] glass-input"><SelectValue placeholder="All GATE Subjects" /></SelectTrigger>
+          <SelectContent className="glass-modal">
+            <SelectItem value="all">All GATE Subjects</SelectItem>
+            {subjects?.map((s) => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.code} — {s.name}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

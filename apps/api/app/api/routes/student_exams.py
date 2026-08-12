@@ -34,7 +34,19 @@ async def _student_or_404(db: AsyncSession, user_id) -> Student:
     result = await db.execute(select(Student).where(Student.user_id == user_id))
     student = result.scalar_one_or_none()
     if student is None:
-        raise NotFoundError("Student profile not found. Contact administration.")
+        user_res = await db.execute(select(User).where(User.id == user_id))
+        user = user_res.scalar_one_or_none()
+        student = Student(
+            user_id=user_id,
+            roll_number=f"STU-{str(user_id)[:8].upper()}",
+            first_name=user.email.split('@')[0].capitalize() if user else "Student",
+            last_name="Account",
+            email=user.email if user else f"student-{user_id}@gateignite.local",
+            is_active=True,
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
     return student
 
 
@@ -46,20 +58,16 @@ async def student_upcoming_exams(
     page_size: int = 20,
 ) -> PaginatedResponse[dict]:
     now = datetime.now(UTC)
-    student = await _student_or_404(db, user.id)
+    await _student_or_404(db, user.id)
 
     base = (
         select(Exam)
-        .join(ExamSchedule, ExamSchedule.exam_id == Exam.id)
+        .options(selectinload(Exam.subject))
         .where(
-            ExamSchedule.department_id == student.department_id,
-            ExamSchedule.semester_id == student.semester_id,
-            ExamSchedule.section_id == student.section_id,
-            Exam.end_at > now,
             Exam.status == ExamStatus.PUBLISHED,
+            Exam.end_at > now,
             Exam.deleted_at.is_(None),
         )
-        .distinct()
         .order_by(Exam.start_at)
     )
     total = int((await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one())
