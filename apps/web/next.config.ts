@@ -15,10 +15,7 @@ const nextConfig: NextConfig = {
     },
   },
   async rewrites() {
-    const apiUrl =
-      process.env.NEXT_PUBLIC_API_URL ||
-      process.env.API_URL ||
-      'https://gate-ds9h.onrender.com';
+    const apiUrl = process.env.API_URL || 'https://gate-ds9h.onrender.com';
     return [
       {
         source: '/api/v1/:path*',

@@ -77,6 +77,18 @@ API_INTERNAL_KEY=shared-secret-for-webhooks
 ALLOWED_ORIGINS=https://your-frontend.vercel.app
 ```
 
+### Backend (Render)
+
+The repository includes `render.yaml`. Create the service with **New → Blueprint**
+and select this repository. Set the secret environment variables shown above in
+the Render dashboard; do not put them in the Blueprint. Render uses `/health`
+as its health check and starts Uvicorn on Render's assigned `$PORT`.
+
+If the public `*.onrender.com` URL returns `508 Loop Detected`, delete and
+recreate the affected Render web service from the Blueprint. A 508 is emitted
+by Render's edge router before this application receives the request, so
+changing FastAPI CORS settings cannot resolve it.
+
 ### Supabase
 
 - Create project
@@ -173,12 +185,12 @@ alembic downgrade -1
 
 ## Scaling
 
-| Component | Scale Strategy |
-|-----------|---------------|
+| Component | Scale Strategy                                            |
+| --------- | --------------------------------------------------------- |
 | Backend   | Railway auto-scales workers; increase `uvicorn --workers` |
-| Database  | Supabase read replicas, connection pooling (PgBouncer) |
-| Redis     | Railway Redis cluster |
-| Frontend  | Vercel edge network automatic |
+| Database  | Supabase read replicas, connection pooling (PgBouncer)    |
+| Redis     | Railway Redis cluster                                     |
+| Frontend  | Vercel edge network automatic                             |
 
 ## Security Checklist
 

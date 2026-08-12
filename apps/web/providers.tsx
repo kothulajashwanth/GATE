@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuth } from '@clerk/nextjs';
-import { createClient } from '@/lib/api/client';
+import { ApiError, createClient } from '@/lib/api/client';
 import { ApiClientProvider } from '@/lib/api/client-provider';
 import { TooltipProvider } from '@radix-ui/react-tooltip';
 import { ThemeProvider } from 'next-themes';
@@ -16,7 +16,10 @@ export function Providers({ children }: { children: ReactNode }) {
         defaultOptions: {
           queries: {
             staleTime: 30 * 1000,
-            retry: 1,
+            // Do not repeat failed browser/network requests. Repeats made the
+            // same CORS/preflight failure appear multiple times in the console.
+            retry: (failureCount, error) =>
+              error instanceof ApiError && error.status >= 500 && failureCount < 1,
             refetchOnWindowFocus: false,
           },
         },
@@ -29,7 +32,12 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <ApiClientProvider client={client}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
           <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
           <Toaster />
         </ThemeProvider>

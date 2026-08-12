@@ -26,7 +26,16 @@ interface ClientOptions {
 }
 
 export function buildFullUrl(path: string): string {
-  let base = (process.env.NEXT_PUBLIC_API_URL || 'https://gate-ds9h.onrender.com').replace(/\/+$/, '');
+  // Browser requests go through the Next/Vercel rewrite. Besides keeping the
+  // API hostname private, this avoids a CORS preflight for every authenticated
+  // request (Authorization and X-Request-Id are non-simple headers).
+  //
+  // Server-side callers retain the configured absolute API URL.
+  let base = (
+    typeof window === 'undefined'
+      ? process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://gate-ds9h.onrender.com'
+      : '/api/v1'
+  ).replace(/\/+$/, '');
 
   // Enforce https if base URL uses http (prevent Render HTTP -> HTTPS 301 redirects)
   if (base.startsWith('http://') && base.includes('onrender.com')) {
@@ -68,7 +77,10 @@ export function createClient(opts: ClientOptions = {}) {
   ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'X-Request-Id': typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+      'X-Request-Id':
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : String(Date.now()),
     };
 
     const token = await resolveAuthToken();
@@ -86,7 +98,10 @@ export function createClient(opts: ClientOptions = {}) {
     });
 
     if (!response.ok) {
-      let payload: { error?: { code?: string; message?: string; details?: unknown }; detail?: string } = {};
+      let payload: {
+        error?: { code?: string; message?: string; details?: unknown };
+        detail?: string;
+      } = {};
       try {
         payload = (await response.json()) as typeof payload;
       } catch {

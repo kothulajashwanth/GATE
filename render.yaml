@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: gate-ds9h
+    runtime: python
+    rootDir: apps/api
+    buildCommand: pip install --upgrade pip && pip install .
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips=*
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
