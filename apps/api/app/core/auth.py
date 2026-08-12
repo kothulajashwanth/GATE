@@ -187,6 +187,37 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
             is_active=True,
         )
         db.add(user)
+        await db.flush()
+
+        if user.role == Role.STUDENT:
+            from app.db.models.student import Student
+            student = Student(
+                user_id=user.id,
+                roll_number=f"STU-{str(user.id)[:8].upper()}",
+                first_name=user.first_name,
+                last_name=user.last_name or "",
+                email=user.email,
+                is_active=True,
+            )
+            db.add(student)
+
         await db.commit()
         await db.refresh(user)
+
+    if user and user.role == Role.STUDENT:
+        from app.db.models.student import Student
+        from sqlalchemy import select
+        st_res = await db.execute(select(Student).where(Student.user_id == user.id))
+        if not st_res.scalar_one_or_none():
+            student = Student(
+                user_id=user.id,
+                roll_number=f"STU-{str(user.id)[:8].upper()}",
+                first_name=user.first_name,
+                last_name=user.last_name or "",
+                email=user.email,
+                is_active=True,
+            )
+            db.add(student)
+            await db.commit()
+
     return user

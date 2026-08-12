@@ -326,6 +326,7 @@ export default function StudentsPage() {
     queryKey: ['students', params, isLoaded, isSignedIn],
     queryFn: () => api.get<Paginated<StudentRow>>('/students', params),
     enabled: isLoaded && isSignedIn,
+    refetchInterval: 5000,
     retry: 2,
   });
 
