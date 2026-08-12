@@ -15,13 +15,10 @@ interface SessionClaims {
 export async function serverApi() {
   let token: string | null = null;
   try {
+    const { getToken } = await auth();
     token = await getToken();
   } catch {
-    try {
-      token = await getToken({ template: 'examshield' });
-    } catch {
-      // fallback
-    }
+    // fallback
   }
   return createClient({ token });
 }
