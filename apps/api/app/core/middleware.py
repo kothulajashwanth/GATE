@@ -111,7 +111,6 @@ def setup_middleware(app: FastAPI) -> None:
 
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(RateLimitMiddleware)
-    app.add_middleware(TrailingSlashAndCorsMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -122,4 +121,5 @@ def setup_middleware(app: FastAPI) -> None:
         expose_headers=["X-Request-Id", "X-Response-Time-Ms"],
         max_age=600,
     )
+    app.add_middleware(TrailingSlashAndCorsMiddleware)
 

@@ -13,6 +13,7 @@ const isPublicRoute = createRouteMatcher([
   '/access-denied',
   '/api/webhooks(.*)',
   '/api/clerk(.*)',
+  '/api/v1(.*)',
 ]);
 
 const isAdminRoute = createRouteMatcher(['/admin(.*)']);
@@ -29,6 +30,13 @@ interface SessionClaims {
 }
 
 export default clerkMiddleware(async (auth, req) => {
+  const { pathname } = req.nextUrl;
+
+  // 0. OPTIONS preflight and API v1 routes must never be redirected by Next.js middleware
+  if (req.method === 'OPTIONS' || pathname.startsWith('/api/v1')) {
+    return NextResponse.next();
+  }
+
   const { userId, sessionClaims } = await auth();
   const { pathname } = req.nextUrl;
 
