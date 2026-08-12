@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # ---- Storage (S3-compatible; Supabase Storage in prod) ----
-    storage_provider: str = "minio"
-    storage_endpoint: str = "http://localhost:9000"
-    storage_public_url: str = "http://localhost:9000"
+    storage_provider: str = "supabase"
+    storage_endpoint: str = "https://zamewnqegiszvekkzteq.supabase.co"
+    storage_public_url: str = "https://zamewnqegiszvekkzteq.supabase.co"
     storage_bucket: str = "examshield"
     storage_region: str = "us-east-1"
     storage_access_key: str = "examshield"
