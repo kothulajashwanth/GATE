@@ -15,7 +15,51 @@ from app.db.models.user import Role, User
 from app.db.session import get_db
 from app.schemas.pagination import PaginatedResponse
 
+from pydantic import BaseModel
+
 router = APIRouter()
+
+
+class StudentProfileOut(BaseModel):
+    id: str
+    rollNumber: str
+    firstName: str
+    lastName: str
+    email: str
+    phone: str | None = None
+    department: dict | None = None
+    semester: dict | None = None
+    section: dict | None = None
+
+
+@router.get("/profile", response_model=StudentProfileOut, summary="Get student profile details")
+async def get_student_profile(
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> StudentProfileOut:
+    student = await _student_or_404(db, user.id)
+    res = await db.execute(
+        select(Student)
+        .where(Student.id == student.id)
+        .options(
+            selectinload(Student.department),
+            selectinload(Student.semester),
+            selectinload(Student.section),
+            selectinload(Student.user),
+        )
+    )
+    st = res.scalar_one()
+    return StudentProfileOut(
+        id=str(st.id),
+        rollNumber=st.roll_number,
+        firstName=st.first_name,
+        lastName=st.last_name,
+        email=st.email,
+        phone=st.phone,
+        department={"id": str(st.department.id), "name": st.department.name} if st.department else None,
+        semester={"id": str(st.semester.id), "name": st.semester.name} if st.semester else None,
+        section={"id": str(st.section.id), "name": st.section.name} if st.section else None,
+    )
 
 
 def _exam_preview(exam: Exam) -> dict:
