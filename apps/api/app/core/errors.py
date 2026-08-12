@@ -68,16 +68,28 @@ def _error_body(status_code: int, code: str, message: str, details: Any = None) 
     }
 
 
+def _add_cors_headers(request: Request, response: JSONResponse) -> JSONResponse:
+    from app.core.config import get_settings
+    origin = request.headers.get("origin")
+    if origin:
+        settings = get_settings()
+        if origin.rstrip("/") in settings.cors_origins or origin.endswith(".vercel.app"):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
+
+
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
-    async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
-        return JSONResponse(
+    async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+        resp = JSONResponse(
             status_code=exc.status_code,
             content=_error_body(exc.status_code, exc.code, exc.message, exc.details),
         )
+        return _add_cors_headers(request, resp)
 
     @app.exception_handler(RequestValidationError)
-    async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+    async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         errors = [
             {
                 "loc": list(e.get("loc", [])),
@@ -86,7 +98,7 @@ def register_error_handlers(app: FastAPI) -> None:
             }
             for e in exc.errors()
         ]
-        return JSONResponse(
+        resp = JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=_error_body(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -95,11 +107,12 @@ def register_error_handlers(app: FastAPI) -> None:
                 errors,
             ),
         )
+        return _add_cors_headers(request, resp)
 
     @app.exception_handler(Exception)
     async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
         logger.error("unhandled_exception", path=str(request.url), error=str(exc), exc_info=True)
-        return JSONResponse(
+        resp = JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=_error_body(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -107,3 +120,4 @@ def register_error_handlers(app: FastAPI) -> None:
                 "An internal error occurred",
             ),
         )
+        return _add_cors_headers(request, resp)
