@@ -221,9 +221,9 @@ export default function QuestionBankPage() {
     queryFn: () => api.get<Paginated<QuestionRow>>('/questions', params),
   });
 
-  const { data: subjects } = useQuery<{ id: string; name: string }[]>({
+  const { data: subjects } = useQuery<{ id: string; name: string; code: string }[]>({
     queryKey: ['subjects'],
-    queryFn: () => api.get<{ id: string; name: string }[]>('/question-bank/subjects'),
+    queryFn: () => api.get<{ id: string; name: string; code: string }[]>('/question-bank/subjects'),
   });
 
   const deleteMutation = useMutation({
