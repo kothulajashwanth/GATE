@@ -27,6 +27,12 @@ interface ClientOptions {
 
 export function buildFullUrl(path: string): string {
   let base = (process.env.NEXT_PUBLIC_API_URL || 'https://gate-ds9h.onrender.com').replace(/\/+$/, '');
+
+  // Enforce https if base URL uses http (prevent Render HTTP -> HTTPS 301 redirects)
+  if (base.startsWith('http://') && base.includes('onrender.com')) {
+    base = base.replace('http://', 'https://');
+  }
+
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
 
   if (base.endsWith('/api/v1')) {

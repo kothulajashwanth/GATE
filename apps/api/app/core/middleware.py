@@ -35,7 +35,9 @@ class TrailingSlashAndCorsMiddleware(BaseHTTPMiddleware):
             if origin:
                 if origin in allowed or "*" in allowed:
                     is_allowed = True
-                elif re.match(r"https://.*\.vercel\.app$", origin):
+                elif re.match(r"^https://[a-zA-Z0-9-]+\.vercel\.app$", origin):
+                    is_allowed = True
+                elif origin.endswith(".vercel.app"):
                     is_allowed = True
 
             cors_origin = origin if (is_allowed and origin) else "https://fabgate.vercel.app"
