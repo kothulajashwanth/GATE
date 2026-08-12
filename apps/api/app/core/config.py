@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     # ---- Internal ----
     api_internal_key: str = "change-me-internal-key"
-    allowed_origins: str = "http://localhost:3000,http://localhost:3001"
+    allowed_origins: str = "http://localhost:3000,http://localhost:3001,https://fabgate.vercel.app,https://fabgate.vercel.app/"
 
     @property
     def cors_origins(self) -> list[str]:

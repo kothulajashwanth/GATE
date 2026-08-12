@@ -13,8 +13,16 @@ interface SessionClaims {
  * Components / Route Handlers / Server Actions.
  */
 export async function serverApi() {
-  const { getToken } = await auth();
-  const token = await getToken({ template: 'examshield' });
+  let token: string | null = null;
+  try {
+    token = await getToken();
+  } catch {
+    try {
+      token = await getToken({ template: 'examshield' });
+    } catch {
+      // fallback
+    }
+  }
   return createClient({ token });
 }
 
