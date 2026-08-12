@@ -55,11 +55,32 @@ class Settings(BaseSettings):
 
     # ---- Internal ----
     api_internal_key: str = "change-me-internal-key"
-    allowed_origins: str = "http://localhost:3000,http://localhost:3001,https://fabgate.vercel.app,https://fabgate.vercel.app/"
+    allowed_origins: str = (
+        "https://fabgate.vercel.app,"
+        "http://localhost:3000,"
+        "http://localhost:3001,"
+        "http://localhost:5173,"
+        "http://127.0.0.1:3000,"
+        "http://127.0.0.1:3001,"
+        "http://127.0.0.1:5173"
+    )
 
     @property
     def cors_origins(self) -> list[str]:
-        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+        origins = [o.strip().rstrip("/") for o in self.allowed_origins.split(",") if o.strip()]
+        required_origins = [
+            "https://fabgate.vercel.app",
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001",
+            "http://127.0.0.1:5173",
+        ]
+        for req in required_origins:
+            if req not in origins:
+                origins.append(req)
+        return origins
 
     @property
     def is_production(self) -> bool:

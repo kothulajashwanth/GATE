@@ -62,6 +62,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 def setup_middleware(app: FastAPI) -> None:
     settings = get_settings()
 
+    app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -69,7 +71,6 @@ def setup_middleware(app: FastAPI) -> None:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["X-Request-Id"],
+        expose_headers=["X-Request-Id", "X-Response-Time-Ms"],
+        max_age=600,
     )
-    app.add_middleware(RateLimitMiddleware)
-    app.add_middleware(RequestContextMiddleware)
