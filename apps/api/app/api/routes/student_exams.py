@@ -52,7 +52,7 @@ async def _student_or_404(db: AsyncSession, user_id) -> Student:
 
 @router.get("/upcoming", response_model=PaginatedResponse[dict], summary="Student upcoming exams")
 async def student_upcoming_exams(
-    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = 1,
     page_size: int = 20,
@@ -79,7 +79,7 @@ async def student_upcoming_exams(
 
 @router.get("/completed", response_model=PaginatedResponse[dict], summary="Student completed exams")
 async def student_completed_exams(
-    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = 1,
     page_size: int = 20,
