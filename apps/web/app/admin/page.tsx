@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle, Button } from '@examshield/ui';
 import { Users, GraduationCap, FileQuestion, TrendingUp, ShieldCheck, Sparkles, BookOpen, Layers, ArrowUpRight } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
+import { useAuth } from '@clerk/nextjs';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/client-provider';
 import type { Paginated } from '@examshield/types';
@@ -39,9 +40,10 @@ function StatCard({ title, value, icon: Icon, change }: StatCardProps) {
 
 export default function AdminDashboard() {
   const api = useApiClient();
+  const { isLoaded, isSignedIn } = useAuth();
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['admin', 'stats'],
+    queryKey: ['admin', 'stats', isLoaded, isSignedIn],
     queryFn: async () => {
       try {
         const [students, exams, questions, sessions] = await Promise.all([
@@ -58,13 +60,14 @@ export default function AdminDashboard() {
         };
       } catch {
         return {
-          totalStudents: 124,
-          totalExams: 8,
-          totalQuestions: 450,
-          activeSessions: 2,
+          totalStudents: 0,
+          totalExams: 0,
+          totalQuestions: 0,
+          activeSessions: 0,
         };
       }
     },
+    enabled: isLoaded && isSignedIn,
   });
 
   return (
