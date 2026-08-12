@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import { useAuth } from '@clerk/nextjs';
 import {
   Card, CardContent, Button, Input, Badge,
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -47,9 +48,9 @@ const createStudentSchema = z.object({
   firstName: z.string().min(1, 'First name required'),
   lastName: z.string().optional(),
   phone: z.string().optional(),
-  departmentId: z.string().min(1, 'Department is required'),
-  semesterId: z.string().min(1, 'Semester is required'),
-  sectionId: z.string().min(1, 'Section is required'),
+  departmentId: z.string().optional(),
+  semesterId: z.string().optional(),
+  sectionId: z.string().optional(),
   parentName: z.string().optional(),
   parentPhone: z.string().optional(),
 });
@@ -131,7 +132,7 @@ function CreateStudentDialog({ onCreated }: { onCreated: () => void }) {
               <Input {...register('lastName')} placeholder="Last name" className="glass-input" />
             </div>
             <div className="space-y-2">
-              <Label>Department *</Label>
+              <Label>Department (Optional)</Label>
               <Controller
                 name="departmentId"
                 control={control}
@@ -144,10 +145,9 @@ function CreateStudentDialog({ onCreated }: { onCreated: () => void }) {
                   </Select>
                 )}
               />
-              {errors.departmentId && <p className="text-xs text-destructive">{errors.departmentId.message}</p>}
             </div>
             <div className="space-y-2">
-              <Label>Semester *</Label>
+              <Label>Semester (Optional)</Label>
               <Controller
                 name="semesterId"
                 control={control}
@@ -160,10 +160,9 @@ function CreateStudentDialog({ onCreated }: { onCreated: () => void }) {
                   </Select>
                 )}
               />
-              {errors.semesterId && <p className="text-xs text-destructive">{errors.semesterId.message}</p>}
             </div>
             <div className="space-y-2">
-              <Label>Section *</Label>
+              <Label>Section (Optional)</Label>
               <Controller
                 name="sectionId"
                 control={control}
@@ -176,7 +175,6 @@ function CreateStudentDialog({ onCreated }: { onCreated: () => void }) {
                   </Select>
                 )}
               />
-              {errors.sectionId && <p className="text-xs text-destructive">{errors.sectionId.message}</p>}
             </div>
             <div className="space-y-2">
               <Label>Phone Number</Label>
@@ -323,9 +321,12 @@ export default function StudentsPage() {
   if (deptFilter && deptFilter !== 'all') params.department_id = deptFilter;
   if (activeFilter && activeFilter !== 'all') params.is_active = activeFilter === 'active';
 
+  const { isLoaded, isSignedIn } = useAuth();
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['students', params],
+    queryKey: ['students', params, isLoaded, isSignedIn],
     queryFn: () => api.get<Paginated<StudentRow>>('/students', params),
+    enabled: isLoaded && isSignedIn,
+    retry: 2,
   });
 
   const { data: departments } = useQuery({
