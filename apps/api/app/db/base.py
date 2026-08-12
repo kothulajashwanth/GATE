@@ -8,6 +8,7 @@ from app.db.models.result import ExamResult
 from app.db.models.session import ExamSession, SessionAnswer, ViolationRecord
 from app.db.models.student import Student
 from app.db.models.user import User
+from app.db.models.student_communication import StudentQuery, Feedback # Added
 
 __all__ = [
     "Base",
@@ -31,4 +32,6 @@ __all__ = [
     "ExamResult",
     "AuditLog",
     "Notification",
+    "StudentQuery", # Added
+    "Feedback", # Added
 ]

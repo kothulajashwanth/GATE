@@ -24,3 +24,5 @@ class Student(Base, TimestampMixin, SoftDeleteMixin):
     department = relationship("Department")
     semester = relationship("Semester")
     section = relationship("Section")
+    queries = relationship("StudentQuery", back_populates="student") # Added
+    feedbacks = relationship("Feedback", back_populates="student") # Added

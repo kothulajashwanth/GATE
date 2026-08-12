@@ -17,6 +17,9 @@ from app.api.routes import (
     students,
     users,
     webhooks,
+    admin_monitor,
+    websockets,
+    student_communication, # Added
 )
 
 api_router = APIRouter()
@@ -36,3 +39,6 @@ api_router.include_router(question_bank.router, prefix="/question-bank", tags=["
 api_router.include_router(questions.router, prefix="/questions", tags=["questions"])
 api_router.include_router(sessions.router, prefix="/exam-sessions", tags=["exam-sessions"])
 api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])
+api_router.include_router(admin_monitor.router, prefix="/admin/monitor", tags=["admin-monitor"])
+api_router.include_router(websockets.router, prefix="/ws", tags=["websockets"])
+api_router.include_router(student_communication.router, prefix="/student", tags=["student-communication"]) # Added

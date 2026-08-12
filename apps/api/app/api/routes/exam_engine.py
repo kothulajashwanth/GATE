@@ -1,10 +1,13 @@
 from typing import Annotated
+import json # Added
+from datetime import datetime, UTC # Added UTC for consistency
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from redis.asyncio import Redis # Added
 
 from app.core.auth import require_roles
 from app.core.errors import NotFoundError
@@ -13,10 +16,15 @@ from app.db.models.question import Question
 from app.db.models.session import ExamSession, SessionStatus
 from app.db.models.student import Student
 from app.db.models.user import Role, User
+from app.db.redis import get_redis_dep # Added
 from app.db.session import get_db
 from app.services.exam_engine import ExamEngine
+from app.schemas.active_session import StudentSessionData # Added
+from app.core.config import get_settings # Added
 
 router = APIRouter()
+
+EXAM_SESSION_REDIS_TTL_SECONDS = 60 * 60 * 24 # 24 hours, enough for any exam
 
 
 class StartRequest(BaseModel):
@@ -68,7 +76,7 @@ class SessionView(BaseModel):
 
 async def _student_or_404(db: AsyncSession, user: User) -> Student:
     result = await db.execute(select(Student).where(Student.user_id == user.id))
-    student = result.scalar_one_or_none()
+    student = result.scalar_one_or_one()
     if student is None:
         raise NotFoundError("Student profile not found. Contact administration.")
     return student
@@ -128,6 +136,7 @@ async def start_exam(
     request: Request,
     user: Annotated[User, Depends(require_roles(Role.STUDENT))],
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis_dep)], # Added redis dependency
 ) -> SessionView:
     student = await _student_or_404(db, user)
     exam = await _exam_or_404(db, body.examId)
@@ -148,6 +157,29 @@ async def start_exam(
     answered = {str(a.question_id) for a in full.answers}
 
     await db.commit()
+
+    # Update active student session in Redis
+    redis_key = f"active_student_sessions:{user.id}"
+    student_session_json = await redis.get(redis_key)
+
+    if student_session_json:
+        # Update existing session data
+        existing_session_data = StudentSessionData.model_validate_json(student_session_json)
+        existing_session_data.exam_id = exam.id
+        existing_session_data.status = "in_exam"
+        existing_session_data.last_activity = datetime.now(UTC)
+        await redis.set(redis_key, existing_session_data.model_dump_json(), ex=EXAM_SESSION_REDIS_TTL_SECONDS)
+    else:
+        # Create new session data if not found (should not happen if login worked)
+        new_session_data = StudentSessionData(
+            user_id=user.id,
+            login_time=datetime.now(UTC), # Approx, if not found in redis
+            exam_id=exam.id,
+            status="in_exam",
+            last_activity=datetime.now(UTC)
+        )
+        await redis.set(redis_key, new_session_data.model_dump_json(), ex=EXAM_SESSION_REDIS_TTL_SECONDS)
+
     return _to_view(session, exam, questions, answered)
 
 
@@ -189,11 +221,34 @@ async def heartbeat(
     body: HeartbeatRequest,
     user: Annotated[User, Depends(require_roles(Role.STUDENT))],
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis_dep)], # Added redis dependency
 ) -> dict:
     session = await _session_or_404(db, session_id)
     engine = ExamEngine(db)
     session = await engine.heartbeat(session, body.warningCount)
     await db.commit()
+
+    # Update active student session in Redis
+    redis_key = f"active_student_sessions:{user.id}"
+    student_session_json = await redis.get(redis_key)
+
+    if student_session_json:
+        existing_session_data = StudentSessionData.model_validate_json(student_session_json)
+        existing_session_data.exam_id = session.exam_id # Ensure exam_id is set
+        existing_session_data.status = "in_exam" # Ensure status is "in_exam"
+        existing_session_data.last_activity = datetime.now(UTC)
+        await redis.set(redis_key, existing_session_data.model_dump_json(), ex=EXAM_SESSION_REDIS_TTL_SECONDS)
+    else:
+        # Recreate if somehow lost (should be rare)
+        new_session_data = StudentSessionData(
+            user_id=user.id,
+            login_time=datetime.now(UTC), # Approx
+            exam_id=session.exam_id,
+            status="in_exam",
+            last_activity=datetime.now(UTC)
+        )
+        await redis.set(redis_key, new_session_data.model_dump_json(), ex=EXAM_SESSION_REDIS_TTL_SECONDS)
+
     return {
         "status": session.status.value,
         "warningCount": session.warning_count,
