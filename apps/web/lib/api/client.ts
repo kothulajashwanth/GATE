@@ -1,8 +1,8 @@
 import { toQueryString } from '@examshield/utils';
 
 /**
- * Thin fetch wrapper for the ExamShield REST API.
- * - Attaches bearer token (JWT minted server-side via Clerk session) when present.
+ * Thin fetch wrapper for the GATE IGNITE REST API.
+ * - Attaches bearer token (Clerk JWT) when present.
  * - Sets a request id and json headers.
  * - Throws ApiError with the server's structured error body.
  */
@@ -22,38 +22,36 @@ export class ApiError extends Error {
 
 interface ClientOptions {
   token?: string | null;
+  getToken?: () => Promise<string | null>;
+}
+
+export function buildFullUrl(path: string): string {
+  let base = (process.env.NEXT_PUBLIC_API_URL || 'https://gate-ds9h.onrender.com').replace(/\/+$/, '');
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+
+  if (base.endsWith('/api/v1')) {
+    base = base.replace(/\/api\/v1$/, '');
+  }
+
+  if (cleanPath.startsWith('/api/v1')) {
+    return `${base}${cleanPath}`;
+  }
+  return `${base}/api/v1${cleanPath}`;
 }
 
 export function createClient(opts: ClientOptions = {}) {
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+  let staticToken = opts.token ?? null;
 
-  let token = opts.token ?? null;
-
-  async function ensureToken(): Promise<string> {
-    if (token && !isExpired(token)) return token;
-    token = await mintToken();
-    return token;
-  }
-
-  function isExpired(jwt: string): boolean {
-    try {
-      const parts = jwt.split('.');
-      if (parts.length < 3) return true;
-      const payload = JSON.parse(atob(parts[1]!));
-      return Date.now() >= payload.exp * 1000;
-    } catch {
-      return true;
+  async function resolveAuthToken(): Promise<string | null> {
+    if (opts.getToken) {
+      try {
+        const clerkToken = await opts.getToken();
+        if (clerkToken) return clerkToken;
+      } catch {
+        // Fallback to static token
+      }
     }
-  }
-
-  async function mintToken(): Promise<string> {
-    const response = await fetch(`${baseUrl}/api/v1/auth/token`, {
-      method: 'POST',
-      credentials: 'include', // Clerk session cookie
-    });
-    if (!response.ok) throw new ApiError(response.status, 'token_mint_failed', 'Failed to mint token');
-    const data = await response.json();
-    return data.access_token;
+    return staticToken;
   }
 
   async function request<T>(
@@ -64,13 +62,17 @@ export function createClient(opts: ClientOptions = {}) {
   ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'X-Request-Id': crypto.randomUUID(),
+      'X-Request-Id': typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
     };
-    if (path !== '/api/v1/auth/token') {
-      headers.Authorization = `Bearer ${await ensureToken()}`;
+
+    const token = await resolveAuthToken();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${baseUrl}${path}`, {
+    const fullUrl = buildFullUrl(path);
+
+    const response = await fetch(fullUrl, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -78,19 +80,16 @@ export function createClient(opts: ClientOptions = {}) {
     });
 
     if (!response.ok) {
-      let payload: { error?: { code?: string; message?: string; details?: unknown } } = {};
+      let payload: { error?: { code?: string; message?: string; details?: unknown }; detail?: string } = {};
       try {
         payload = (await response.json()) as typeof payload;
       } catch {
-        // non-json error body; fall through with defaults
-      }
-      if (response.status === 401 && path !== '/api/v1/auth/token') {
-        token = null; // force refresh on next call
+        // non-json error body
       }
       throw new ApiError(
         response.status,
         payload.error?.code ?? 'request_failed',
-        payload.error?.message ?? `Request failed with status ${response.status}`,
+        payload.error?.message ?? payload.detail ?? `Request failed with status ${response.status}`,
         payload.error?.details,
       );
     }
@@ -116,14 +115,15 @@ export function createClient(opts: ClientOptions = {}) {
       return request<T>('DELETE', path, undefined, signal);
     },
     setToken: (t: string | null) => {
-      token = t;
+      staticToken = t;
     },
     raw: {
-      /** Download a non-json resource (report, export) as a Blob. */
-      async download(path: string, t?: string): Promise<Blob> {
+      async download(path: string, params?: Record<string, unknown>): Promise<Blob> {
+        const token = await resolveAuthToken();
         const headers: Record<string, string> = {};
-        if (t) headers.Authorization = `Bearer ${t}`;
-        const response = await fetch(`${baseUrl}${path}`, { headers });
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const fullUrl = buildFullUrl(path + toQueryString(params ?? {}));
+        const response = await fetch(fullUrl, { headers });
         if (!response.ok) {
           throw new ApiError(response.status, 'download_failed', 'Failed to download file');
         }

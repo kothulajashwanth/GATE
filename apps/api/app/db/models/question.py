@@ -70,6 +70,7 @@ class Subject(Base, TimestampMixin, SoftDeleteMixin):
     )
 
     department = relationship("Department")
+    topics = relationship("Topic", back_populates="subject", cascade="all, delete-orphan")
 
 
 class UploadedFile(Base, TimestampMixin):
@@ -88,6 +89,22 @@ class UploadedFile(Base, TimestampMixin):
     questions_found: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     ocr_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    @property
+    def filename(self) -> str:
+        return self.file_name
+
+    @property
+    def storage_path(self) -> str | None:
+        return self.storage_url
+
+    @property
+    def processing_status(self) -> str:
+        return self.status
+
+    @property
+    def questions_extracted(self) -> int:
+        return self.questions_found
+
 
 class FailedQuestion(Base, TimestampMixin):
     """Queue for questions that failed validation pipeline."""
@@ -102,6 +119,23 @@ class FailedQuestion(Base, TimestampMixin):
     reason: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class QuestionOption(Base, TimestampMixin):
+    """Question option stored separately for MCQs and multi-select questions."""
+
+    __tablename__ = "question_options"
+
+    id: Mapped[object] = guid_pk()
+    question_id: Mapped[object] = mapped_column(
+        guid(), ForeignKey("questions.id", ondelete="CASCADE"), index=True, nullable=False
+    )
+    option_text: Mapped[str] = mapped_column(Text, nullable=False)
+    is_correct: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    display_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    question = relationship("Question", back_populates="options_rel")
+
+
 class Question(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "questions"
 
@@ -112,6 +146,12 @@ class Question(Base, TimestampMixin, SoftDeleteMixin):
     subject_id: Mapped[object | None] = mapped_column(
         guid(), ForeignKey("subjects.id"), index=True, nullable=True
     )
+    topic_id: Mapped[object | None] = mapped_column(
+        guid(), ForeignKey("topics.id"), index=True, nullable=True
+    )
+    source_file_id: Mapped[object | None] = mapped_column(
+        guid(), ForeignKey("uploaded_files.id"), index=True, nullable=True
+    )
     created_by: Mapped[object] = mapped_column(guid(), ForeignKey("users.id"), nullable=False)
 
     type: Mapped[QuestionType] = mapped_column(
@@ -119,7 +159,7 @@ class Question(Base, TimestampMixin, SoftDeleteMixin):
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    options: Mapped[list] = mapped_column(JSON, nullable=True)  # ["A", "B", ...] for mcq / multi_select
+    options: Mapped[list] = mapped_column(JSON, nullable=True)  # ["A", "B", ...] for legacy/JSON compatibility
     correct_answers: Mapped[list] = mapped_column(JSON, nullable=False)  # ["A"] / index for fill_blank
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
     hint: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -144,6 +184,12 @@ class Question(Base, TimestampMixin, SoftDeleteMixin):
         guid(), ForeignKey("questions.id"), nullable=True
     )
 
+    options_rel = relationship(
+        "QuestionOption",
+        back_populates="question",
+        order_by="QuestionOption.display_order",
+        cascade="all, delete-orphan",
+    )
     versions = relationship(
         "QuestionVersion",
         back_populates="question",
@@ -152,9 +198,28 @@ class Question(Base, TimestampMixin, SoftDeleteMixin):
     )
     folder = relationship("QuestionBankFolder")
     subject = relationship("Subject")
+    topic_rel = relationship("Topic")
+    source_file = relationship("UploadedFile")
+
+    @property
+    def question_text(self) -> str:
+        return self.text
+
+    @property
+    def question_type(self) -> QuestionType:
+        return self.type
+
+    @property
+    def ai_generated(self) -> bool:
+        return self.is_ai_generated
+
+    @property
+    def status(self) -> str:
+        return "verified" if self.is_verified else "draft"
 
     __table_args__ = (
         Index("ix_questions_subject_difficulty", "subject_id", "difficulty"),
+        Index("ix_questions_topic_id", "topic_id"),
         Index("ix_questions_type_bloom", "type", "bloom_level"),
     )
 

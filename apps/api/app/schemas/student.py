@@ -19,9 +19,9 @@ class StudentCreate(BaseModel):
     firstName: str = Field(min_length=1, max_length=120)
     lastName: str | None = None
     phone: str | None = Field(default=None, max_length=30)
-    departmentId: str
-    semesterId: str
-    sectionId: str
+    departmentId: str | None = None
+    semesterId: str | None = None
+    sectionId: str | None = None
     parentName: str | None = None
     parentPhone: str | None = None
     enrollmentYear: int | None = Field(default=None, ge=1990, le=2100)

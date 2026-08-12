@@ -1,24 +1,38 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_roles
+from app.db.models.question import (
+    BloomLevel,
+    Difficulty,
+    Question,
+    QuestionOption,
+    QuestionType,
+    QuestionVersion,
+)
 from app.db.models.user import Role, User
 from app.db.session import get_db
-from app.services.ai import get_ai_provider
+from app.services.ai import AIQuestion, get_ai_provider
+from app.services.audit import AuditService
+from app.services.blueprint_service import BlueprintRule, BlueprintService
+from app.services.document_parser import normalize_text
 
 router = APIRouter()
 
 
 class GenerateQuestionsRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=2000)
-    count: int = Field(ge=1, le=20, default=5)
+    count: int = Field(ge=1, le=50, default=5)
     difficulty: str | None = Field(default=None, pattern="^(easy|medium|hard)$")
     question_type: str | None = Field(default=None, pattern="^(mcq|true_false|fill_blank|paragraph|coding|image_based|multi_select)$")
     topic: str | None = None
+    subject_id: str | None = None
     bloom_level: str | None = Field(default=None, pattern="^(remember|understand|apply|analyze|evaluate|create)$")
+    source_file_id: str | None = None
 
 
 class AIQuestionOut(BaseModel):
@@ -33,30 +47,56 @@ class AIQuestionOut(BaseModel):
     marks: int = 1
     negative_marks: float = 0.0
     topic: str | None = None
-    learning_outcome: str | None = None
-    tags: list[str] = []
+    subject_id: str | None = None
+    is_duplicate: bool = False
+    status: str = "NEEDS_REVIEW"
 
 
-class ImproveQuestionRequest(BaseModel):
-    question: AIQuestionOut
-    instruction: str = Field(min_length=1, max_length=1000)
+class ApproveQuestionItem(BaseModel):
+    type: str = "mcq"
+    text: str
+    options: list[str] | None = None
+    correctAnswers: list[str]
+    explanation: str | None = None
+    difficulty: str = "medium"
+    bloomLevel: str | None = None
+    marks: int = 1
+    negativeMarks: float = 0.0
+    topic: str | None = None
+    subjectId: str | None = None
 
 
-class GenerateExamPaperRequest(BaseModel):
-    topic: str = Field(min_length=1, max_length=200)
-    total_marks: int = Field(ge=1, le=500, default=100)
-    duration_minutes: int = Field(ge=1, le=300, default=120)
-    difficulty_distribution: dict[str, int] = Field(default_factory=lambda: {"easy": 3, "medium": 5, "hard": 2})
-    question_types: list[str] = Field(default_factory=lambda: ["mcq", "true_false", "fill_blank"])
+class BulkApproveRequest(BaseModel):
+    questions: list[ApproveQuestionItem]
 
 
-@router.post("/generate-questions", response_model=list[AIQuestionOut], summary="Generate questions from prompt")
+class BlueprintRuleSchema(BaseModel):
+    subject_id: str | None = None
+    topic: str | None = None
+    question_type: str | None = None
+    difficulty: str | None = None
+    bloom_level: str | None = None
+    count: int = Field(ge=1, default=1)
+    marks: int = Field(ge=1, default=1)
+
+
+class BlueprintRequest(BaseModel):
+    exam_id: str | None = None
+    rules: list[BlueprintRuleSchema]
+
+
+@router.post("/generate-questions", response_model=list[AIQuestionOut], summary="Generate questions using AI provider")
 async def generate_questions(
     body: GenerateQuestionsRequest,
-    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    request: Request,
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[AIQuestionOut]:
     provider = get_ai_provider()
+    await AuditService.log(
+        db, actor=actor, request=request, action="AI_GENERATION_STARTED", entity_type="ai_generator", new_value=body.model_dump(mode="json")
+    )
+
     questions = await provider.generate_questions(
         prompt=body.prompt,
         count=body.count,
@@ -65,78 +105,149 @@ async def generate_questions(
         topic=body.topic,
         bloom_level=body.bloom_level,
     )
-    return [AIQuestionOut(**q.__dict__) for q in questions]
 
+    # Duplicate check against existing PostgreSQL questions
+    existing_db = (await db.execute(select(Question.text).where(Question.deleted_at.is_(None)))).scalars().all()
+    existing_norm = {normalize_text(t) for t in existing_db if t}
 
-@router.post("/improve-question", response_model=AIQuestionOut, summary="Improve an existing question")
-async def improve_question(
-    body: ImproveQuestionRequest,
-    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> AIQuestionOut:
-    provider = get_ai_provider()
-    from app.services.ai import AIQuestion
+    out: list[AIQuestionOut] = []
+    for q in questions:
+        norm = normalize_text(q.text)
+        is_dup = norm in existing_norm
+        out.append(
+            AIQuestionOut(
+                type=q.type,
+                text=q.text,
+                options=q.options,
+                correct_answers=q.correct_answers,
+                explanation=q.explanation,
+                hint=q.hint,
+                difficulty=q.difficulty,
+                bloom_level=q.bloom_level,
+                marks=q.marks,
+                negative_marks=q.negative_marks,
+                topic=q.topic,
+                subject_id=body.subject_id,
+                is_duplicate=is_dup,
+                status="NEEDS_REVIEW",
+            )
+        )
 
-    q = AIQuestion(**body.question.model_dump())
-    improved = await provider.improve_question(q, body.instruction)
-    return AIQuestionOut(**improved.__dict__)
-
-
-@router.post("/generate-explanation", response_model=dict, summary="Generate explanation for a question")
-async def generate_explanation(
-    body: AIQuestionOut,
-    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
-    provider = get_ai_provider()
-    from app.services.ai import AIQuestion
-
-    q = AIQuestion(**body.model_dump())
-    explanation = await provider.generate_explanation(q)
-    return {"explanation": explanation}
-
-
-@router.post("/generate-hint", response_model=dict, summary="Generate hint for a question")
-async def generate_hint(
-    body: AIQuestionOut,
-    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
-    provider = get_ai_provider()
-    from app.services.ai import AIQuestion
-
-    q = AIQuestion(**body.model_dump())
-    hint = await provider.generate_hint(q)
-    return {"hint": hint}
-
-
-@router.post("/generate-wrong-options", response_model=dict, summary="Generate plausible wrong options")
-async def generate_wrong_options(
-    body: AIQuestionOut,
-    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    count: int = 3,
-) -> dict:
-    provider = get_ai_provider()
-    from app.services.ai import AIQuestion
-
-    q = AIQuestion(**body.model_dump())
-    options = await provider.generate_wrong_options(q, count)
-    return {"options": options}
-
-
-@router.post("/generate-exam-paper", response_model=list[AIQuestionOut], summary="Generate a full exam paper")
-async def generate_exam_paper(
-    body: GenerateExamPaperRequest,
-    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> list[AIQuestionOut]:
-    provider = get_ai_provider()
-    questions = await provider.generate_exam_paper(
-        topic=body.topic,
-        total_marks=body.total_marks,
-        duration_minutes=body.duration_minutes,
-        difficulty_distribution=body.difficulty_distribution,
-        question_types=body.question_types,
+    await AuditService.log(
+        db, actor=actor, request=request, action="AI_GENERATION_COMPLETED", entity_type="ai_generator", new_value={"count": len(out)}
     )
-    return [AIQuestionOut(**q.__dict__) for q in questions]
+    await db.commit()
+    return out
+
+
+@router.post("/questions/approve", response_model=dict, summary="Approve AI-generated questions into Question Bank")
+async def approve_questions(
+    body: BulkApproveRequest,
+    request: Request,
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    created_ids = []
+    for item in body.questions:
+        try:
+            q_type = QuestionType(item.type.lower())
+        except ValueError:
+            q_type = QuestionType.MCQ
+
+        try:
+            diff = Difficulty(item.difficulty.lower())
+        except ValueError:
+            diff = Difficulty.MEDIUM
+
+        bloom = BloomLevel(item.bloomLevel.lower()) if item.bloomLevel else None
+
+        question = Question(
+            type=q_type,
+            text=item.text,
+            options=item.options,
+            correct_answers=item.correctAnswers,
+            explanation=item.explanation,
+            difficulty=diff,
+            bloom_level=bloom,
+            marks=item.marks,
+            negative_marks=item.negativeMarks,
+            topic=item.topic,
+            subject_id=item.subjectId,
+            is_verified=True,
+            is_ai_generated=True,
+            created_by=actor.id,
+            version=1,
+        )
+        db.add(question)
+        await db.flush()
+
+        if item.options:
+            for idx, opt_text in enumerate(item.options):
+                opt_letter = chr(65 + idx)
+                is_correct = opt_letter in item.correctAnswers or str(idx) in item.correctAnswers or opt_text in item.correctAnswers
+                db.add(QuestionOption(question_id=question.id, option_text=opt_text, is_correct=is_correct, display_order=idx + 1))
+
+        db.add(QuestionVersion(question_id=question.id, version=1, snapshot=item.model_dump(mode="json"), change_summary="Approved AI generated question", changed_by=actor.id))
+        created_ids.append(str(question.id))
+
+    await AuditService.log(
+        db, actor=actor, request=request, action="QUESTION_AI_APPROVED", entity_type="question", new_value={"approved_count": len(created_ids)}
+    )
+    await db.commit()
+    return {"status": "APPROVED", "approved_count": len(created_ids), "question_ids": created_ids}
+
+
+@router.post("/blueprints/check-availability", summary="Check Question Bank availability for Blueprint rules")
+async def check_blueprint_availability(
+    body: BlueprintRequest,
+    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    service = BlueprintService(db)
+    rules = [BlueprintRule(**r.model_dump()) for r in body.rules]
+    res = await service.check_availability(rules)
+    return {
+        "total_requested": res.total_requested,
+        "total_available": res.total_available,
+        "total_gap": res.total_gap,
+        "rules_availability": res.rules_availability,
+    }
+
+
+@router.post("/blueprints/fill-gaps", summary="Generate missing questions for blueprint gaps using AI")
+async def fill_blueprint_gaps(
+    body: BlueprintRequest,
+    request: Request,
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    service = BlueprintService(db)
+    rules = [BlueprintRule(**r.model_dump()) for r in body.rules]
+    generated = await service.fill_gaps_with_ai(rules, actor)
+
+    await AuditService.log(
+        db, actor=actor, request=request, action="BLUEPRINT_CREATED", entity_type="blueprint", new_value={"generated_gaps": len(generated)}
+    )
+    await db.commit()
+    return {"generated_count": len(generated), "question_ids": [str(q.id) for q in generated]}
+
+
+@router.post("/blueprints/assemble-exam", summary="Assemble approved questions from Question Bank into Exam")
+async def assemble_exam_blueprint(
+    body: BlueprintRequest,
+    request: Request,
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    if not body.exam_id:
+        return {"error": "exam_id is required"}
+
+    service = BlueprintService(db)
+    rules = [BlueprintRule(**r.model_dump()) for r in body.rules]
+    links = await service.assemble_exam_from_blueprint(exam_id=body.exam_id, rules=rules)
+
+    await AuditService.log(
+        db, actor=actor, request=request, action="EXAM_ASSEMBLED", entity_type="exam", entity_id=body.exam_id, new_value={"assembled_count": len(links)}
+    )
+    await db.commit()
+    return {"exam_id": body.exam_id, "assembled_count": len(links)}

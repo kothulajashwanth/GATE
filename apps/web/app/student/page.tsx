@@ -1,14 +1,15 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@examshield/ui';
-import { FileQuestion, Trophy, Clock, Award, Calendar, CheckCircle, AlertCircle } from 'lucide-react';
+import { FileQuestion, Trophy, Clock, Award, Calendar, CheckCircle, AlertCircle, ArrowRight } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
+import { useAuth } from '@clerk/nextjs';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/client-provider';
 import { formatDateTime, formatDuration } from '@examshield/utils';
 import { Button } from '@examshield/ui';
 import Link from 'next/link';
-import { Paginated } from '@examshield/types';
+import type { Paginated } from '@examshield/types';
 
 interface ExamPreview {
   id: string;
@@ -31,21 +32,21 @@ interface ResultRow {
 
 function StatCard({ title, value, icon: Icon, href }: { title: string; value: string | number; icon: React.ComponentType<{ className?: string }>; href?: string }) {
   return (
-    <Card className={href ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}>
+    <Card className="glass-card overflow-hidden border border-white/20 dark:border-white/10">
       <CardContent className="p-6">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
-            <p className="text-3xl font-bold mt-1">{value}</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{title}</p>
+            <p className="text-3xl font-extrabold mt-1 text-foreground tracking-tight">{value}</p>
           </div>
-          <div className="p-3 bg-primary/10 rounded-xl text-primary">
+          <div className="p-3 bg-primary/10 rounded-2xl border border-primary/20 text-primary">
             <Icon className="h-6 w-6" />
           </div>
         </div>
         {href && (
-          <div className="mt-4 text-sm text-primary font-medium flex items-center gap-1">
-            View all <span>→</span>
-          </div>
+          <Link href={href} className="mt-4 text-xs text-primary font-bold flex items-center gap-1 hover:underline">
+            View all <ArrowRight className="h-3 w-3" />
+          </Link>
         )}
       </CardContent>
     </Card>
@@ -59,36 +60,34 @@ function UpcomingExamCard({ exam }: { exam: ExamPreview }) {
   const isUpcoming = now < start;
 
   return (
-    <div className="border rounded-xl p-4 hover:bg-muted/30 transition-colors">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold truncate">{exam.title}</h3>
-          <p className="text-sm text-muted-foreground">{exam.subject?.name ?? 'General'}</p>
-          <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5" />
-              {formatDateTime(exam.startAt)}
-            </span>
-            <span className="flex items-center gap-1">
-              <Clock className="h-3.5 w-3.5" />
-              {formatDuration(exam.durationMinutes * 60)}
-            </span>
-          </div>
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-border/50 bg-white/40 dark:bg-slate-800/40 gap-4">
+      <div className="space-y-1">
+        <div className="font-bold text-sm text-foreground">{exam.title}</div>
+        <div className="text-xs text-muted-foreground flex items-center gap-3">
+          <span>Subject: {exam.subject?.name ?? 'General'}</span>
+          <span>Duration: {exam.durationMinutes} mins</span>
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-            isActive ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200' :
-            isUpcoming ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
-            'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200'
-          }`}>
-            {isActive ? 'In Progress' : isUpcoming ? 'Upcoming' : 'Ended'}
-          </span>
-          <Button asChild variant="outline" size="sm" disabled={!isActive}>
-            <Link href={`/exam/${exam.id}`}>
-              {isActive ? 'Continue' : isUpcoming ? 'View' : 'View Results'}
-            </Link>
+        <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+          <Calendar className="h-3.5 w-3.5 text-primary" />
+          {formatDateTime(exam.startAt)}
+        </div>
+      </div>
+      <div>
+        {isActive ? (
+          <Link href={`/exam/${exam.id}`}>
+            <Button size="sm" className="glass-button bg-emerald-600 hover:bg-emerald-700 text-white">
+              Start Exam Now
+            </Button>
+          </Link>
+        ) : isUpcoming ? (
+          <Button size="sm" variant="outline" disabled className="glass-button">
+            Scheduled
           </Button>
-        </div>
+        ) : (
+          <Button size="sm" variant="ghost" disabled>
+            Ended
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -96,87 +95,93 @@ function UpcomingExamCard({ exam }: { exam: ExamPreview }) {
 
 export default function StudentDashboard() {
   const api = useApiClient();
+  const { isLoaded, isSignedIn } = useAuth();
 
-  const { data: stats, isLoading: statsLoading } = useQuery({
-    queryKey: ['student', 'stats'],
-    queryFn: async () => {
-      const [upcoming, completed, results] = await Promise.all([
-        api.get<Paginated<ExamPreview>>('/student/exams/upcoming', { page_size: 5 }),
-        api.get<Paginated<ExamPreview>>('/student/exams/completed', { page_size: 5 }),
-        api.get<Paginated<ResultRow>>('/student/results', { page_size: 5 }),
-      ]);
-      return {
-        upcomingCount: upcoming.total,
-        completedCount: completed.total,
-        averageScore: results.items.length
-          ? Math.round(results.items.reduce((a: number, r: ResultRow) => a + (r.percentage || 0), 0) / results.items.length)
-          : 0,
-        rank: results.items[0]?.rank ?? null,
-      };
-    },
+  const { data: examsData, isLoading: loadingExams } = useQuery({
+    queryKey: ['student', 'exams', isLoaded, isSignedIn],
+    queryFn: () => api.get<Paginated<ExamPreview>>('/student/exams/upcoming', { page_size: 5, page: 1 }),
+    enabled: isLoaded && isSignedIn,
+    retry: 2,
   });
 
-  const { data: upcoming, isLoading: examsLoading } = useQuery({
-    queryKey: ['student', 'exams', 'upcoming'],
-    queryFn: () => api.get<Paginated<ExamPreview>>('/student/exams/upcoming', { page_size: 4 }),
+  const { data: resultsData, isLoading: loadingResults } = useQuery({
+    queryKey: ['student', 'results', isLoaded, isSignedIn],
+    queryFn: () => api.get<Paginated<ResultRow>>('/results', { page_size: 5, page: 1 }),
+    enabled: isLoaded && isSignedIn,
+    retry: 2,
   });
+
+  const exams = examsData?.items ?? [];
+  const results = resultsData?.items ?? [];
+
+  const passedCount = results.filter((r) => r.isPassed === true).length;
+  const avgPercentage = results.length
+    ? Math.round(results.reduce((acc, r) => acc + (r.percentage ?? 0), 0) / results.length)
+    : 0;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Dashboard"
-        description="Your examination overview"
+        title="Student Examination Dashboard"
+        description="View available scheduled exams, launch proctored sessions, and track performance results."
       />
 
-      {statsLoading ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Card key={i}><CardContent className="p-6 animate-pulse space-y-2">
-              <div className="h-4 w-24 bg-muted rounded" />
-              <div className="h-8 w-32 bg-muted rounded" />
-            </CardContent></Card>
-          ))}
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard title="Upcoming Exams" value={stats?.upcomingCount ?? 0} icon={FileQuestion} href="/student/exams/upcoming" />
-          <StatCard title="Completed Exams" value={stats?.completedCount ?? 0} icon={CheckCircle} href="/student/exams/completed" />
-          <StatCard title="Average Score" value={`${stats?.averageScore ?? 0}%`} icon={Award} href="/student/results" />
-          <StatCard title="Current Rank" value={stats?.rank ?? '—'} icon={Trophy} href="/student/results" />
-        </div>
-      )}
-
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Upcoming Exams</h2>
-        <Button asChild variant="ghost" size="sm">
-          <Link href="/student/exams/upcoming">View all →</Link>
-        </Button>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard title="Available Exams" value={exams.length} icon={FileQuestion} href="/student/exams/upcoming" />
+        <StatCard title="Exams Completed" value={results.length} icon={CheckCircle} href="/student/results" />
+        <StatCard title="Passed Exams" value={passedCount} icon={Trophy} />
+        <StatCard title="Average Score" value={`${avgPercentage}%`} icon={Award} />
       </div>
 
-      {examsLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <Card key={i}><CardContent className="p-4 animate-pulse">
-              <div className="h-5 w-48 bg-muted rounded mb-2" />
-              <div className="h-4 w-64 bg-muted rounded" />
-            </CardContent></Card>
-          ))}
-        </div>
-      ) : upcoming?.items.length ? (
-        <div className="space-y-3">
-          {upcoming.items.map((exam: ExamPreview) => (
-            <UpcomingExamCard key={exam.id} exam={exam} />
-          ))}
-        </div>
-      ) : (
-        <Card>
-          <CardContent className="p-8 text-center">
-            <Calendar className="h-12 w-12 mx-auto text-muted-foreground/50 mb-3" />
-            <h3 className="text-lg font-semibold">No upcoming exams</h3>
-            <p className="text-muted-foreground mt-1">You have no exams scheduled at the moment.</p>
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="text-base font-bold flex items-center gap-2">
+              <Clock className="h-5 w-5 text-primary" /> Scheduled & Active Examinations
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {loadingExams ? (
+              <div className="p-4 text-center text-xs text-muted-foreground">Loading exam schedules...</div>
+            ) : !exams.length ? (
+              <div className="p-6 text-center text-xs text-muted-foreground">No active examinations scheduled right now.</div>
+            ) : (
+              exams.map((exam) => <UpcomingExamCard key={exam.id} exam={exam} />)
+            )}
           </CardContent>
         </Card>
-      )}
+
+        <Card className="glass-card">
+          <CardHeader>
+            <CardTitle className="text-base font-bold flex items-center gap-2">
+              <Award className="h-5 w-5 text-amber-500" /> Recent Examination Performance
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {loadingResults ? (
+              <div className="p-4 text-center text-xs text-muted-foreground">Loading results...</div>
+            ) : !results.length ? (
+              <div className="p-6 text-center text-xs text-muted-foreground">No examination attempts recorded yet.</div>
+            ) : (
+              results.map((r) => (
+                <div key={r.id} className="flex items-center justify-between p-3 rounded-xl border border-border/40 bg-white/30 dark:bg-slate-800/30 text-xs">
+                  <div>
+                    <div className="font-semibold text-foreground">Exam Attempt #{r.id.slice(0, 8)}</div>
+                    <div className="text-muted-foreground">Score: {r.percentage ?? 0}%</div>
+                  </div>
+                  <div>
+                    {r.isPassed ? (
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 font-bold text-[10px]">PASSED</span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-bold text-[10px]">FAILED</span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

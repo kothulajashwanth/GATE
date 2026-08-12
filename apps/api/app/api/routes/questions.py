@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.auth import require_roles
 from app.core.errors import NotFoundError
@@ -11,14 +12,23 @@ from app.db.models.question import (
     BloomLevel,
     Difficulty,
     Question,
+    QuestionOption,
     QuestionType,
+    QuestionVersion,
 )
 from app.db.models.user import Role, User
 from app.db.session import get_db
 from app.schemas.pagination import PaginatedResponse
 from app.services.audit import AuditService
+from app.services.question_service import QuestionService
 
 router = APIRouter()
+
+
+class QuestionVersionOut(BaseModel):
+    version: int
+    changeSummary: str | None = None
+    createdAt: str
 
 
 class QuestionOut(BaseModel):
@@ -37,19 +47,22 @@ class QuestionOut(BaseModel):
     topic: str | None = None
     subjectId: str | None = None
     folderId: str | None = None
+    sourceFileId: str | None = None
     isVerified: bool = False
     isAiGenerated: bool = False
+    version: int = 1
+    versions: list[QuestionVersionOut] = []
     createdAt: str
 
 
 class QuestionCreate(BaseModel):
-    type: str = Field(pattern="^(mcq|true_false|fill_blank|paragraph|coding|image_based|multi_select)$")
+    type: str = Field(default="mcq", pattern="^(mcq|true_false|fill_blank|paragraph|coding|image_based|multi_select)$")
     text: str = Field(min_length=1)
     options: list[str] | None = None
     correctAnswers: list[str] = Field(min_length=1)
     explanation: str | None = None
     hint: str | None = None
-    difficulty: str = Field(pattern="^(easy|medium|hard)$")
+    difficulty: str = Field(default="medium", pattern="^(easy|medium|hard)$")
     bloomLevel: str | None = None
     tags: list[str] = []
     marks: int = Field(default=1, ge=1)
@@ -75,9 +88,18 @@ class QuestionUpdate(BaseModel):
     subjectId: str | None = None
     folderId: str | None = None
     isVerified: bool | None = None
+    changeSummary: str | None = None
 
 
 def _question_out(q: Question) -> QuestionOut:
+    versions_out = [
+        QuestionVersionOut(
+            version=v.version,
+            changeSummary=v.change_summary,
+            createdAt=v.created_at.isoformat(),
+        )
+        for v in getattr(q, "versions", [])
+    ]
     return QuestionOut(
         id=str(q.id),
         type=q.type.value,
@@ -94,8 +116,11 @@ def _question_out(q: Question) -> QuestionOut:
         topic=q.topic,
         subjectId=str(q.subject_id) if q.subject_id else None,
         folderId=str(q.folder_id) if q.folder_id else None,
+        sourceFileId=str(q.source_file_id) if q.source_file_id else None,
         isVerified=q.is_verified,
         isAiGenerated=q.is_ai_generated,
+        version=q.version,
+        versions=versions_out,
         createdAt=q.created_at.isoformat(),
     )
 
@@ -110,16 +135,19 @@ async def list_questions(
     question_type: str | None = None,
     difficulty: str | None = None,
     subject_id: str | None = None,
+    topic: str | None = None,
 ) -> PaginatedResponse[QuestionOut]:
-    base = select(Question).where(Question.deleted_at.is_(None)).order_by(Question.created_at.desc())
+    base = select(Question).where(Question.deleted_at.is_(None)).options(selectinload(Question.versions)).order_by(Question.created_at.desc())
     if search:
         base = base.where(Question.text.ilike(f"%{search}%"))
     if question_type:
-        base = base.where(Question.type == QuestionType(question_type))
+        base = base.where(Question.type == QuestionType(question_type.lower()))
     if difficulty:
-        base = base.where(Question.difficulty == Difficulty(difficulty))
+        base = base.where(Question.difficulty == Difficulty(difficulty.lower()))
     if subject_id:
         base = base.where(Question.subject_id == subject_id)
+    if topic:
+        base = base.where(Question.topic.ilike(f"%{topic}%"))
 
     total = int((await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one())
     result = await db.execute(base.limit(page_size).offset((page - 1) * page_size))
@@ -130,7 +158,9 @@ async def list_questions(
 
 async def _get_question_or_404(db: AsyncSession, question_id: str) -> Question:
     result = await db.execute(
-        select(Question).where(Question.id == question_id, Question.deleted_at.is_(None))
+        select(Question)
+        .where(Question.id == question_id, Question.deleted_at.is_(None))
+        .options(selectinload(Question.versions), selectinload(Question.options_rel))
     )
     q = result.scalar_one_or_none()
     if q is None:
@@ -155,14 +185,14 @@ async def create_question(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> QuestionOut:
     q = Question(
-        type=QuestionType(body.type),
+        type=QuestionType(body.type.lower()),
         text=body.text,
         options=body.options,
         correct_answers=body.correctAnswers,
         explanation=body.explanation,
         hint=body.hint,
-        difficulty=Difficulty(body.difficulty),
-        bloom_level=BloomLevel(body.bloomLevel) if body.bloomLevel else None,
+        difficulty=Difficulty(body.difficulty.lower()),
+        bloom_level=BloomLevel(body.bloomLevel.lower()) if body.bloomLevel else None,
         tags=body.tags,
         marks=body.marks,
         negative_marks=body.negativeMarks,
@@ -171,22 +201,48 @@ async def create_question(
         folder_id=body.folderId,
         is_verified=body.isVerified,
         created_by=actor.id,
+        version=1,
     )
     db.add(q)
     await db.flush()
+
+    # Create QuestionOption records
+    if body.options:
+        for idx, opt_text in enumerate(body.options):
+            opt_letter = chr(65 + idx)
+            is_correct = opt_letter in body.correctAnswers or str(idx) in body.correctAnswers or opt_text in body.correctAnswers
+            q_opt = QuestionOption(
+                question_id=q.id,
+                option_text=opt_text,
+                is_correct=is_correct,
+                display_order=idx + 1,
+            )
+            db.add(q_opt)
+
+    # Create initial QuestionVersion
+    qv = QuestionVersion(
+        question_id=q.id,
+        version=1,
+        snapshot=body.model_dump(mode="json"),
+        change_summary="Initial manual creation",
+        changed_by=actor.id,
+    )
+    db.add(qv)
+
     await AuditService.log(
         db,
         actor=actor,
         request=request,
-        action="question.create",
+        action="QUESTION_CREATED",
         entity_type="question",
         entity_id=str(q.id),
         new_value=body.model_dump(mode="json"),
     )
     await db.commit()
-    return _question_out(q)
+    return _question_out(await _get_question_or_404(db, str(q.id)))
 
 
+@router.put("/{question_id}", response_model=QuestionOut, summary="Update question")
 @router.patch("/{question_id}", response_model=QuestionOut, summary="Update question")
 async def update_question(
     question_id: str,
@@ -197,6 +253,8 @@ async def update_question(
 ) -> QuestionOut:
     q = await _get_question_or_404(db, question_id)
     updates = body.model_dump(exclude_unset=True, exclude_none=True)
+    change_summary = updates.pop("changeSummary", None) or "Updated question profile"
+
     field_map = {
         "correctAnswers": "correct_answers",
         "negativeMarks": "negative_marks",
@@ -208,22 +266,27 @@ async def update_question(
     for k, v in updates.items():
         attr = field_map.get(k, k)
         if attr == "bloom_level":
-            v = BloomLevel(v) if v else None
-        if attr == "difficulty" and v:
-            v = Difficulty(v)
+            v = BloomLevel(v.lower()) if v else None
+        elif attr == "difficulty" and v:
+            v = Difficulty(v.lower())
+        elif attr == "type" and v:
+            v = QuestionType(v.lower())
         setattr(q, attr, v)
-    await db.flush()
+
+    service = QuestionService(db)
+    await service.create_question_version(q, actor, change_summary=change_summary)
+
     await AuditService.log(
         db,
         actor=actor,
         request=request,
-        action="question.update",
+        action="QUESTION_UPDATED",
         entity_type="question",
         entity_id=question_id,
         new_value=body.model_dump(mode="json", exclude_none=True),
     )
     await db.commit()
-    return _question_out(q)
+    return _question_out(await _get_question_or_404(db, question_id))
 
 
 @router.delete("/{question_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete question (soft)")
@@ -241,7 +304,7 @@ async def delete_question(
         db,
         actor=actor,
         request=request,
-        action="question.delete",
+        action="QUESTION_DELETED",
         entity_type="question",
         entity_id=question_id,
         old_value={"text": q.text[:200]},

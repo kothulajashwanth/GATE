@@ -1,9 +1,17 @@
-from app.db.models.academic import Department, Section, Semester
+from app.db.models.academic import Department, Section, Semester, Topic
 from app.db.models.audit import AuditLog
 from app.db.models.base import Base, SoftDeleteMixin, TimestampMixin
 from app.db.models.exam import Exam, ExamQuestion, ExamSchedule
 from app.db.models.notification import Notification
-from app.db.models.question import Question, QuestionBankFolder, QuestionVersion, Subject
+from app.db.models.question import (
+    FailedQuestion,
+    Question,
+    QuestionBankFolder,
+    QuestionOption,
+    QuestionVersion,
+    Subject,
+    UploadedFile,
+)
 from app.db.models.result import ExamResult
 from app.db.models.session import ExamSession, SessionAnswer, ViolationRecord
 from app.db.models.student import Student
@@ -18,10 +26,15 @@ __all__ = [
     "Department",
     "Semester",
     "Section",
+    "Topic",
     "Student",
     "QuestionBankFolder",
     "Subject",
+    "Topic",
+    "UploadedFile",
+    "FailedQuestion",
     "Question",
+    "QuestionOption",
     "QuestionVersion",
     "Exam",
     "ExamQuestion",

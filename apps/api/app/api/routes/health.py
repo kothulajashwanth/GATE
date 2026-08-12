@@ -1,39 +1,57 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.redis import get_redis_dep
 from app.db.session import get_db
 
 router = APIRouter()
 
 
-class HealthStatus(BaseModel):
+class DatabaseHealthStatus(BaseModel):
+    status: str
+    database: str
+
+
+class OverallHealthStatus(BaseModel):
     status: str
     version: str
     database: str
-    redis: str
 
 
-@router.get("/health", response_model=HealthStatus, summary="Service health")
+@router.get("/health", response_model=OverallHealthStatus, summary="Service health")
 async def health(
     db: AsyncSession = Depends(get_db),
-    redis: Redis = Depends(get_redis_dep),
-) -> HealthStatus:
-    db_ok = redis_ok = "up"
+) -> OverallHealthStatus:
+    db_status = "connected"
     try:
         await db.execute(text("SELECT 1"))
     except Exception:
-        db_ok = "down"
-    try:
-        await redis.ping()
-    except Exception:
-        redis_ok = "down"
-    return HealthStatus(
-        status="ok" if db_ok == redis_ok == "up" else "degraded",
+        db_status = "disconnected"
+
+    return OverallHealthStatus(
+        status="healthy" if db_status == "connected" else "unhealthy",
         version="0.1.0",
-        database=db_ok,
-        redis=redis_ok,
+        database=db_status,
     )
+
+
+@router.get("/health/database", response_model=DatabaseHealthStatus, summary="Database health check")
+async def health_database(
+    db: AsyncSession = Depends(get_db),
+) -> DatabaseHealthStatus:
+    try:
+        await db.execute(text("SELECT 1"))
+        return DatabaseHealthStatus(
+            status="healthy",
+            database="connected",
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "status": "unhealthy",
+                "database": "disconnected",
+                "error": str(e),
+            },
+        )

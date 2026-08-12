@@ -26,3 +26,28 @@ class Student(Base, TimestampMixin, SoftDeleteMixin):
     section = relationship("Section")
     queries = relationship("StudentQuery", back_populates="student") # Added
     feedbacks = relationship("Feedback", back_populates="student") # Added
+
+    @property
+    def full_name(self) -> str:
+        return self.user.full_name if self.user else ""
+
+    @property
+    def email(self) -> str:
+        return self.user.email if self.user else ""
+
+    @property
+    def status(self) -> str:
+        return self.user.status if self.user else "active"
+
+    @property
+    def department_name(self) -> str | None:
+        return self.department.name if self.department else None
+
+    @property
+    def semester_name(self) -> str | None:
+        return self.semester.name if self.semester else None
+
+    @property
+    def section_name(self) -> str | None:
+        return self.section.name if self.section else None
+

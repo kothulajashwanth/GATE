@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # ---- Core ----
-    app_name: str = "ExamShield API"
+    app_name: str = "GATE IGNITE API"
     environment: Literal["development", "staging", "production"] = "development"
     log_level: str = "INFO"
     secret_key: str = "dev-secret-key-change-me"
@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # ---- Storage (S3-compatible; Supabase Storage in prod) ----
-    storage_provider: str = "minio"
-    storage_endpoint: str = "http://localhost:9000"
-    storage_public_url: str = "http://localhost:9000"
+    storage_provider: str = "supabase"
+    storage_endpoint: str = "https://zamewnqegiszvekkzteq.supabase.co"
+    storage_public_url: str = "https://zamewnqegiszvekkzteq.supabase.co"
     storage_bucket: str = "examshield"
     storage_region: str = "us-east-1"
     storage_access_key: str = "examshield"
@@ -51,19 +51,61 @@ class Settings(BaseSettings):
 
     # ---- Email ----
     resend_api_key: str | None = None
-    email_from: str = "ExamShield <no-reply@example.com>"
+    email_from: str = "GATE IGNITE <no-reply@example.com>"
 
     # ---- Internal ----
     api_internal_key: str = "change-me-internal-key"
-    allowed_origins: str = "http://localhost:3000,http://localhost:3001"
+    allowed_origins: str = (
+        "https://fabgate.vercel.app,"
+        "http://localhost:3000,"
+        "http://localhost:3001,"
+        "http://localhost:5173,"
+        "http://127.0.0.1:3000,"
+        "http://127.0.0.1:3001,"
+        "http://127.0.0.1:5173"
+    )
 
     @property
     def cors_origins(self) -> list[str]:
-        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+        origins = [o.strip().rstrip("/") for o in self.allowed_origins.split(",") if o.strip()]
+        required_origins = [
+            "https://fabgate.vercel.app",
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:3001",
+            "http://127.0.0.1:5173",
+        ]
+        for req in required_origins:
+            if req not in origins:
+                origins.append(req)
+        return origins
 
     @property
     def is_production(self) -> bool:
         return self.environment == "production"
+
+    @property
+    def async_database_url(self) -> str:
+        url = self.database_url
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        elif url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        return url
+
+    @property
+    def sync_database_url(self) -> str:
+        url = self.database_url
+        if url.startswith("postgresql+asyncpg://"):
+            return url.replace("postgresql+asyncpg://", "postgresql://", 1)
+        elif url.startswith("postgres+asyncpg://"):
+            return url.replace("postgres+asyncpg://", "postgresql://", 1)
+        elif url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql://", 1)
+        return url
+
 
 
 @lru_cache

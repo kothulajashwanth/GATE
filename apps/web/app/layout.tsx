@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     template: `%s · ${APP_NAME}`,
   },
   description:
-    'Enterprise secure online examination management system for colleges with AI-powered question generation and live proctoring.',
+    'GATE IGNITE — Secure AI-powered examination and assessment platform for GATE preparation.',
   keywords: ['online exams', 'proctoring', 'question bank', 'college', 'examination management'],
   robots: { index: true, follow: true },
 };
