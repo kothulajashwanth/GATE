@@ -134,3 +134,4 @@ export function createClient(opts: ClientOptions = {}) {
 }
 
 export type ApiClient = ReturnType<typeof createClient>;
+

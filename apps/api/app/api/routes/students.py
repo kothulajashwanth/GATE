@@ -250,3 +250,4 @@ async def delete_student(
         old_value={"rollNumber": student.roll_number},
     )
     await db.commit()
+
