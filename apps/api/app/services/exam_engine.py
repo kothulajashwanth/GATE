@@ -4,7 +4,7 @@ The engine owns the anti-cheating invariants:
 - one ACTIVE session per student+exam
 - no session before start_at / after end_at
 - deadline = now + duration (not server start + duration offset by clock)
-- warning 3 => terminate + lock future attempts
+- warning limit reached => terminate + lock future attempts
 """
 
 from datetime import UTC, datetime, timedelta
@@ -171,6 +171,23 @@ class ExamEngine:
         )
         if warning_number >= MAX_WARNINGS:
             await self._terminate(session, f"{violation_type}: {reason or 'maximum warnings'}")
+        await self.db.flush()
+        return session
+
+    async def admin_terminate_session(self, session: ExamSession, reason: str, actor_id: str) -> ExamSession:
+        """Force terminate an active session by an Admin."""
+        self.db.add(
+            ViolationRecord(
+                session_id=session.id,
+                violation_type="ADMIN_TERMINATION",
+                warning_number=session.warning_count + 1,
+                reason=f"Admin termination by #{actor_id}: {reason}",
+                ip_address=session.ip_address,
+                user_agent=session.user_agent,
+                device_fingerprint=session.device_fingerprint,
+            )
+        )
+        await self._terminate(session, f"ADMIN_TERMINATION: {reason}")
         await self.db.flush()
         return session
 

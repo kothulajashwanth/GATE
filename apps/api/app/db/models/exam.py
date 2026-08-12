@@ -20,10 +20,14 @@ from app.db.models.base import Base, SoftDeleteMixin, TimestampMixin, guid, guid
 
 class ExamStatus(StrEnum):
     DRAFT = "draft"
+    REVIEW = "review"
+    SCHEDULED = "scheduled"
     PUBLISHED = "published"
+    LIVE = "live"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    ARCHIVED = "archived"
 
 
 class ExamQuestionMode(StrEnum):
@@ -71,6 +75,26 @@ class Exam(Base, TimestampMixin, SoftDeleteMixin):
         "ExamSchedule", back_populates="exam", cascade="all, delete-orphan"
     )
 
+    @property
+    def duration(self) -> int:
+        return self.duration_minutes
+
+    @property
+    def start_time(self) -> datetime:
+        return self.start_at
+
+    @property
+    def end_time(self) -> datetime:
+        return self.end_at
+
+    @property
+    def randomize_options(self) -> bool:
+        return self.shuffle_options
+
+    @property
+    def negative_marks(self) -> float:
+        return self.negative_marks_value
+
 
 class ExamQuestion(Base):
     """Exam-question join with per-exam ordering and marks override."""
@@ -89,6 +113,10 @@ class ExamQuestion(Base):
 
     exam = relationship("Exam", back_populates="questions")
     question = relationship("Question")
+
+    @property
+    def display_order(self) -> int:
+        return self.order_index
 
 
 class ExamSchedule(Base, TimestampMixin):

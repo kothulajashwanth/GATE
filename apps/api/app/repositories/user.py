@@ -1,5 +1,6 @@
 from sqlalchemy import select
 
+from app.core.errors import ConflictError
 from app.db.models.user import Role, User
 from app.repositories.base import BaseRepository
 
@@ -16,6 +17,12 @@ class UserRepository(BaseRepository[User]):
         stmt = self._live_filter(select(User).where(User.clerk_id == clerk_id))
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def create_user(self, **kwargs) -> User:
+        email = kwargs.get("email")
+        if email and await self.get_by_email(email):
+            raise ConflictError(f"Email '{email}' already exists")
+        return await self.create(**kwargs)
 
     async def get_or_create_system(self, role: Role = Role.SUPER_ADMIN) -> User:
         user = await self.get_by_email("system@internal.examshield")

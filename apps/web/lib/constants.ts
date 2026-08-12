@@ -1,6 +1,6 @@
 /** App-wide constants. */
 
-export const APP_NAME = 'ExamShield AI';
+export const APP_NAME = 'GATE IGNITE';
 
 export const ROUTES = {
   home: '/',

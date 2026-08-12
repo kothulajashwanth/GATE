@@ -23,8 +23,8 @@ export function Providers({ children }: { children: ReactNode }) {
       }),
   );
 
-  const { getToken, isLoaded } = useAuth();
-  const [client] = useState(() => createClient({}));
+  const { getToken } = useAuth();
+  const [client] = useState(() => createClient({ getToken }));
 
   return (
     <QueryClientProvider client={queryClient}>

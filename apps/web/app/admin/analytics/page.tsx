@@ -1,189 +1,221 @@
 'use client';
 
 import { useState } from 'react';
-import {
-  Card, CardContent, CardHeader, CardTitle,
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Button,
-} from '@examshield/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/client-provider';
 import { PageHeader } from '@/components/page-header';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
-} from 'recharts';
-import { downloadBlob } from '@examshield/utils';
-import { Paginated } from '@examshield/types';
+  Card, CardContent, CardHeader, CardTitle, Button, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Progress
+} from '@examshield/ui';
+import {
+  BarChart3, Users, FileQuestion, Award, ShieldAlert, Download, Calendar, Loader2, CheckCircle2, AlertTriangle, Activity
+} from 'lucide-react';
+import { toast } from 'sonner';
 
-const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
-
-interface ExamAnalytics {
-  scoreStats: { count: number; avgPercentage: number; minPercentage: number; maxPercentage: number; stdPercentage: number };
+interface OverviewRes {
+  totalStudents: number;
+  totalExams: number;
+  totalAttempts: number;
+  totalResults: number;
+  passedCount: number;
+  failedCount: number;
+  passRate: number;
+  avgPercentage: number;
   scoreDistribution: { range: string; count: number }[];
-  timeStats: { avgTimeSeconds: number; minTimeSeconds: number; maxTimeSeconds: number };
-  questionAnalysis: { questionId: string; text: string; type: string; totalAttempts: number; answered: number; correct: number; accuracy: number; avgMarks: number }[];
-  departmentBreakdown: { department: string; count: number; avgPercentage: number }[];
-  semesterBreakdown: { semester: string; count: number; avgPercentage: number }[];
+  totalViolations: number;
 }
 
-export default function AnalyticsPage() {
+interface DeptRes {
+  id: string;
+  name: string;
+  studentCount: number;
+  attemptsCount: number;
+  avgPercentage: number;
+  passRate: number;
+}
+
+export default function AdminAnalyticsPage() {
   const api = useApiClient();
-  const [selectedExam, setSelectedExam] = useState('');
+  const [days, setDays] = useState(30);
 
-  const { data: exams } = useQuery({
-    queryKey: ['exams'],
-    queryFn: () => api.get<Paginated<{ id: string; title: string }>>('/exams', { page_size: 100 }),
+  const { data: overview, isLoading: loadingOverview } = useQuery<OverviewRes>({
+    queryKey: ['admin-analytics-overview', days],
+    queryFn: () => api.get<OverviewRes>(`/analytics/overview`, { days }),
   });
 
-  const { data: analytics, isLoading } = useQuery<ExamAnalytics>({
-    queryKey: ['analytics', selectedExam],
-    queryFn: () => api.get(`/analytics/exam/${selectedExam}/analytics`),
-    enabled: !!selectedExam,
+  const { data: departments = [], isLoading: loadingDepts } = useQuery<DeptRes[]>({
+    queryKey: ['admin-analytics-departments'],
+    queryFn: () => api.get<DeptRes[]>(`/analytics/departments`),
   });
 
-  const handleDownload = async (format: string) => {
-    if (!selectedExam) return;
-    const blob = await api.raw.download(`/analytics/exam/${selectedExam}/report?format=${format}`);
-    downloadBlob(blob, `exam-report-${selectedExam.slice(0, 8)}.${format === 'excel' ? 'xlsx' : format}`);
+  const handleExportCsv = async () => {
+    toast.info('Generating CSV Analytics Summary Report...');
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/analytics/export`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`,
+        },
+      });
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'gate_ignite_analytics_report.csv';
+      a.click();
+      toast.success('CSV Report exported successfully!');
+    } catch {
+      toast.error('Failed to export report');
+    }
   };
-
-  const passRate = analytics
-    ? analytics.scoreDistribution
-        .filter(d => d.range.startsWith('4') || d.range.startsWith('5') || d.range.startsWith('6') || d.range.startsWith('7') || d.range.startsWith('8') || d.range.startsWith('9') || d.range.startsWith('10'))
-        .reduce((sum, d) => sum + d.count, 0)
-    : 0;
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Analytics" description="Performance insights across exams, departments, and semesters">
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled={!selectedExam} onClick={() => handleDownload('pdf')}>PDF</Button>
-          <Button variant="outline" size="sm" disabled={!selectedExam} onClick={() => handleDownload('excel')}>Excel</Button>
-          <Button variant="outline" size="sm" disabled={!selectedExam} onClick={() => handleDownload('csv')}>CSV</Button>
-        </div>
+      <PageHeader
+        title="Institutional Analytics & Performance Intelligence"
+        description="Comprehensive score distributions, department performance metrics, pass/fail trends, and proctoring telemetry analytics."
+      >
+        <Button size="sm" variant="outline" className="glass-button" onClick={handleExportCsv}>
+          <Download className="h-4 w-4 mr-1 text-primary" /> Export CSV Report
+        </Button>
       </PageHeader>
 
-      <div className="flex items-center gap-3">
-        <Select value={selectedExam} onValueChange={setSelectedExam}>
-          <SelectTrigger className="w-[300px]"><SelectValue placeholder="Select exam" /></SelectTrigger>
-          <SelectContent>
-            {exams?.items?.map((e) => <SelectItem key={e.id} value={e.id}>{e.title}</SelectItem>)}
-          </SelectContent>
-        </Select>
+      {/* Date Filter Toolbar */}
+      <div className="flex items-center justify-between gap-4 p-4 glass-card rounded-2xl">
+        <div className="flex items-center gap-2 text-xs font-semibold">
+          <Calendar className="h-4 w-4 text-primary" /> Select Time Window:
+        </div>
+        <div className="flex items-center gap-2">
+          {[7, 30, 90, 0].map((d) => (
+            <Button
+              key={d}
+              size="sm"
+              variant={days === d ? 'default' : 'outline'}
+              className="text-xs glass-button"
+              onClick={() => setDays(d)}
+            >
+              {d === 0 ? 'All Time' : `${d} Days`}
+            </Button>
+          ))}
+        </div>
       </div>
 
-      {!selectedExam ? (
-        <Card><CardContent className="p-12 text-center text-muted-foreground">
-          Select an exam to view analytics.
-        </CardContent></Card>
-      ) : isLoading ? (
-        <Card><CardContent className="p-12 text-center text-muted-foreground">Loading...</CardContent></Card>
-      ) : analytics ? (
-        <div className="space-y-6">
-          {/* Summary stats */}
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
-            {[
-              { label: 'Students', value: analytics.scoreStats.count },
-              { label: 'Average', value: `${analytics.scoreStats.avgPercentage}%` },
-              { label: 'Highest', value: `${analytics.scoreStats.maxPercentage}%` },
-              { label: 'Lowest', value: `${analytics.scoreStats.minPercentage}%` },
-              { label: 'Passing Rate', value: `${Math.round((passRate / Math.max(analytics.scoreStats.count, 1)) * 100)}%` },
-            ].map((s) => (
-              <Card key={s.label}><CardContent className="p-4">
-                <p className="text-sm text-muted-foreground">{s.label}</p>
-                <p className="text-2xl font-bold mt-1">{s.value}</p>
-              </CardContent></Card>
-            ))}
-          </div>
+      {/* KPI Cards */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="glass-card">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground uppercase font-semibold">Active Students</p>
+              <p className="text-2xl font-extrabold mt-1 text-primary">{overview?.totalStudents || 0}</p>
+            </div>
+            <div className="p-2.5 bg-primary/10 rounded-xl text-primary"><Users className="h-5 w-5" /></div>
+          </CardContent>
+        </Card>
 
-          {/* Score distribution */}
-          <div className="grid gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader><CardTitle>Score Distribution</CardTitle></CardHeader>
-              <CardContent className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={analytics.scoreDistribution}>
-                    <XAxis dataKey="range" />
-                    <YAxis allowDecimals={false} />
-                    <Tooltip />
-                    <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground uppercase font-semibold">Total Exam Attempts</p>
+              <p className="text-2xl font-extrabold mt-1 text-blue-600">{overview?.totalAttempts || 0}</p>
+            </div>
+            <div className="p-2.5 bg-blue-500/10 rounded-xl text-blue-600"><Activity className="h-5 w-5" /></div>
+          </CardContent>
+        </Card>
 
-            {/* Department breakdown */}
-            <Card>
-              <CardHeader><CardTitle>Department Performance</CardTitle></CardHeader>
-              <CardContent className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={analytics.departmentBreakdown}
-                      dataKey="avgPercentage"
-                      nameKey="department"
-                      outerRadius={80}
-                      label={(entry) => entry.department}
-                    >
-                      {analytics.departmentBreakdown.map((_, i) => (
-                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
+        <Card className="glass-card">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground uppercase font-semibold">Institutional Pass Rate</p>
+              <p className="text-2xl font-extrabold mt-1 text-emerald-600">{overview?.passRate || 0}%</p>
+            </div>
+            <div className="p-2.5 bg-emerald-500/10 rounded-xl text-emerald-600"><CheckCircle2 className="h-5 w-5" /></div>
+          </CardContent>
+        </Card>
 
-          {/* Semester breakdown */}
-          <Card>
-            <CardHeader><CardTitle>Semester Performance</CardTitle></CardHeader>
-            <CardContent className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={analytics.semesterBreakdown}>
-                  <XAxis dataKey="semester" />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="avgPercentage" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
+        <Card className="glass-card">
+          <CardContent className="p-4 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-muted-foreground uppercase font-semibold">Average Percentage</p>
+              <p className="text-2xl font-extrabold mt-1 text-amber-500">{overview?.avgPercentage || 0}%</p>
+            </div>
+            <div className="p-2.5 bg-amber-500/10 rounded-xl text-amber-500"><Award className="h-5 w-5" /></div>
+          </CardContent>
+        </Card>
+      </div>
 
-          {/* Question analysis */}
-          <Card>
-            <CardHeader><CardTitle>Question Analysis</CardTitle></CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-muted-foreground">
-                      <th className="text-left p-3">Question</th>
-                      <th className="text-left p-3">Type</th>
-                      <th className="text-right p-3">Attempts</th>
-                      <th className="text-right p-3">Accuracy</th>
-                      <th className="text-right p-3">Avg Marks</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analytics.questionAnalysis.map((q) => (
-                      <tr key={q.questionId} className="border-b last:border-0 hover:bg-muted/50">
-                        <td className="p-3 max-w-[300px] truncate">{q.text}</td>
-                        <td className="p-3">{q.type}</td>
-                        <td className="p-3 text-right">{q.totalAttempts}</td>
-                        <td className="p-3 text-right">{q.accuracy}%</td>
-                        <td className="p-3 text-right">{q.avgMarks}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      ) : null}
+      {/* Score Distribution & Department Breakdowns */}
+      <div className="grid gap-6 lg:grid-cols-12">
+        {/* Score Distribution Histogram Bar Representation */}
+        <Card className="glass-card lg:col-span-6">
+          <CardHeader>
+            <CardTitle className="text-base font-bold flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-primary" /> Score Distribution Histogram
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-xs">
+            {loadingOverview ? (
+              <div className="p-6 text-center text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin mx-auto" /> Loading score distribution...</div>
+            ) : (
+              overview?.scoreDistribution.map((bucket) => {
+                const maxCount = Math.max(...(overview?.scoreDistribution.map((b) => b.count) || [1]), 1);
+                const barPct = Math.round((bucket.count / maxCount) * 100);
+                return (
+                  <div key={bucket.range} className="space-y-1">
+                    <div className="flex justify-between text-[11px] font-medium">
+                      <span>Range {bucket.range}</span>
+                      <span className="font-bold">{bucket.count} Results</span>
+                    </div>
+                    <Progress value={barPct} className="h-2" />
+                  </div>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Department Performance */}
+        <Card className="glass-card lg:col-span-6">
+          <CardHeader>
+            <CardTitle className="text-base font-bold flex items-center gap-2">
+              <Users className="h-5 w-5 text-emerald-600" /> Department Performance Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {loadingDepts ? (
+              <div className="p-6 text-center text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin mx-auto" /> Loading departments...</div>
+            ) : !departments.length ? (
+              <div className="p-6 text-center text-muted-foreground">No departments registered.</div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-b border-border/50">
+                    <TableHead>Department</TableHead>
+                    <TableHead>Students</TableHead>
+                    <TableHead>Attempts</TableHead>
+                    <TableHead>Avg Score</TableHead>
+                    <TableHead>Pass Rate</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {departments.map((d) => (
+                    <TableRow key={d.id} className="border-b border-border/40">
+                      <TableCell className="font-semibold text-xs">{d.name}</TableCell>
+                      <TableCell className="text-xs">{d.studentCount}</TableCell>
+                      <TableCell className="text-xs">{d.attemptsCount}</TableCell>
+                      <TableCell className="text-xs font-bold text-primary">{d.avgPercentage}%</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="bg-emerald-100 text-emerald-800 text-[10px]">
+                          {d.passRate}%
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

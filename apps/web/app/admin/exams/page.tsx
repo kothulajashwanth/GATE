@@ -1,107 +1,259 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/client-provider';
 import { PageHeader } from '@/components/page-header';
-import { Card, CardContent, Button, Badge, Input } from '@examshield/ui';
-import { FileQuestion, Plus, Search, Calendar, Clock, Sparkles, Filter } from 'lucide-react';
+import {
+  Card, CardContent, Button, Input, Badge, Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow, Label, Textarea,
+} from '@examshield/ui';
+import {
+  FileQuestion, Plus, Search, MoreHorizontal, Eye, Edit3, Trash2, CheckCircle2, Clock, XCircle, Send, ShieldCheck, Layers, FileCheck, AlertTriangle, Calendar, Loader2
+} from 'lucide-react';
+import { DataTablePagination } from '@/components/data-table-pagination';
+import { EmptyState } from '@/components/empty-state';
+import { formatDateTime } from '@examshield/utils';
+import { toast } from 'sonner';
 import Link from 'next/link';
-import { useState } from 'react';
-import { formatDateTime, formatDuration } from '@examshield/utils';
 
-interface Exam {
+interface ExamRow {
   id: string;
   title: string;
-  subject?: { name: string } | null;
+  description: string | null;
+  durationMinutes: number;
   startAt: string;
   endAt: string;
-  durationMinutes: number;
+  passingMarks: number;
+  totalMarks: number;
   status: string;
+  securityMode: boolean;
+  cameraProctoringEnabled: boolean;
+  createdAt: string;
 }
 
-export default function AdminExamsPage() {
+export default function ExamsPage() {
   const api = useApiClient();
-  const [search, setSearch] = useState('');
+  const queryClient = useQueryClient();
 
-  const { data: exams = [], isLoading } = useQuery<Exam[]>({
-    queryKey: ['admin', 'exams'],
-    queryFn: async () => {
-      try {
-        const res = await api.get<{ items: Exam[] }>('/exams');
-        return res.items ?? [];
-      } catch {
-        return [
-          { id: '1', title: 'Data Structures Mid-term Exam', subject: { name: 'Data Structures' }, startAt: new Date().toISOString(), endAt: new Date(Date.now() + 3600000).toISOString(), durationMinutes: 60, status: 'published' },
-          { id: '2', title: 'Database Management Systems Quiz', subject: { name: 'DBMS' }, startAt: new Date(Date.now() + 86400000).toISOString(), endAt: new Date(Date.now() + 9000000).toISOString(), durationMinutes: 45, status: 'draft' },
-        ];
-      }
-    },
+  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [cancelModalExam, setCancelModalExam] = useState<ExamRow | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  const params: Record<string, unknown> = { page, page_size: 20 };
+  if (statusFilter !== 'all') params.exam_status = statusFilter;
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['admin-exams', params],
+    queryFn: () => api.get<{ items: ExamRow[]; page: number; totalPages: number }>('/exams', params),
   });
 
-  const filtered = exams.filter((e) => e.title.toLowerCase().includes(search.toLowerCase()));
+  const publishMutation = useMutation({
+    mutationFn: (examId: string) => api.post(`/exams/${examId}/publish`),
+    onSuccess: () => {
+      toast.success('Exam published successfully! Eligible students can now see the schedule.');
+      queryClient.invalidateQueries({ queryKey: ['admin-exams'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Publishing failed'),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: ({ examId, reason }: { examId: string; reason: string }) =>
+      api.post(`/exams/${examId}/cancel`, { reason }),
+    onSuccess: () => {
+      toast.success('Exam cancelled');
+      setCancelModalExam(null);
+      setCancelReason('');
+      queryClient.invalidateQueries({ queryKey: ['admin-exams'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (examId: string) => api.delete(`/exams/${examId}`),
+    onSuccess: () => {
+      toast.success('Exam draft deleted');
+      queryClient.invalidateQueries({ queryKey: ['admin-exams'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const getStatusBadge = (statusStr: string) => {
+    switch (statusStr.toLowerCase()) {
+      case 'published':
+        return <Badge variant="default" className="bg-emerald-600">Published</Badge>;
+      case 'live':
+      case 'in_progress':
+        return <Badge variant="default" className="bg-blue-600 animate-pulse">LIVE NOW</Badge>;
+      case 'scheduled':
+        return <Badge variant="secondary">Scheduled</Badge>;
+      case 'completed':
+        return <Badge variant="outline" className="bg-slate-100 text-slate-700">Completed</Badge>;
+      case 'cancelled':
+        return <Badge variant="destructive">Cancelled</Badge>;
+      default:
+        return <Badge variant="outline">Draft</Badge>;
+    }
+  };
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Examination Management"
-        description="Create, schedule, configure, and publish tests for students."
+        title="Examinations Management Portal"
+        description="Build multi-step exams, assign Question Bank questions, target student cohorts, set proctoring security policies, and publish schedules."
       >
-        <Button asChild>
-          <Link href="/admin/exams/create">
-            <Plus className="h-4 w-4 mr-2" /> Create Exam
-          </Link>
-        </Button>
+        <Link href="/admin/exams/blueprint">
+          <Button size="sm" variant="outline" className="glass-button">
+            <Layers className="h-4 w-4 mr-1 text-primary" /> Exam Blueprint
+          </Button>
+        </Link>
+        <Link href="/admin/exams/create">
+          <Button size="sm" className="glass-button bg-primary text-white">
+            <Plus className="h-4 w-4 mr-1" /> Create Examination Wizard
+          </Button>
+        </Link>
       </PageHeader>
 
-      <div className="flex items-center gap-4 max-w-md">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search exams..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
+      {/* Filter Toolbar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto pb-2 sm:pb-0">
+          {['all', 'draft', 'scheduled', 'published', 'live', 'completed', 'cancelled'].map((st) => (
+            <Button
+              key={st}
+              size="sm"
+              variant={statusFilter === st ? 'default' : 'outline'}
+              className="capitalize text-xs glass-button"
+              onClick={() => { setStatusFilter(st); setPage(1); }}
+            >
+              {st}
+            </Button>
+          ))}
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2].map((i) => (
-            <Card key={i} className="animate-pulse"><CardContent className="p-6 h-28 bg-muted/30 rounded" /></Card>
-          ))}
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {filtered.map((exam) => (
-            <Card key={exam.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline">{exam.subject?.name ?? 'General'}</Badge>
-                    <Badge className={exam.status === 'published' ? 'bg-emerald-500/15 text-emerald-700' : 'bg-muted text-muted-foreground'}>
-                      {exam.status.toUpperCase()}
-                    </Badge>
-                  </div>
-                  <h3 className="text-lg font-bold">{exam.title}</h3>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3.5 w-3.5" /> {formatDateTime(exam.startAt)}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5" /> {formatDuration(exam.durationMinutes * 60)}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" asChild>
-                    <Link href={`/exam/${exam.id}`}>Monitor Live</Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+      <Card className="glass-card">
+        <CardContent className="p-0">
+          {isLoading ? (
+            <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" /> Loading examinations from database...
+            </div>
+          ) : !data?.items.length ? (
+            <div className="p-8">
+              <EmptyState
+                title="No examination schedules found"
+                description="Click 'Create Examination Wizard' to configure an exam schedule."
+                action={
+                  <Link href="/admin/exams/create">
+                    <Button size="sm"><Plus className="h-4 w-4 mr-1" /> Create Examination</Button>
+                  </Link>
+                }
+              />
+            </div>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-b border-border/50">
+                    <TableHead>Exam Title</TableHead>
+                    <TableHead>Active Window</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Marks</TableHead>
+                    <TableHead>Proctoring</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.items.map((exam) => (
+                    <TableRow key={exam.id} className="border-b border-border/40 hover:bg-white/30 dark:hover:bg-slate-800/30">
+                      <TableCell className="font-bold text-xs">
+                        <div>{exam.title}</div>
+                        <div className="text-[10px] text-muted-foreground font-mono">ID: #{exam.id.slice(0, 8)}</div>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1"><Calendar className="h-3 w-3 text-primary" /> {formatDateTime(exam.startAt)}</div>
+                        <div className="flex items-center gap-1 text-[10px]">to {formatDateTime(exam.endAt)}</div>
+                      </TableCell>
+                      <TableCell className="text-xs font-semibold">{exam.durationMinutes} mins</TableCell>
+                      <TableCell className="text-xs font-semibold">{exam.totalMarks} Marks</TableCell>
+                      <TableCell>
+                        <Badge variant={exam.securityMode ? 'default' : 'outline'} className="text-[10px]">
+                          {exam.securityMode ? 'Proctored' : 'Standard'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(exam.status)}</TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon"><MoreHorizontal className="h-4 w-4" /></Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="glass-modal">
+                            {exam.status === 'draft' && (
+                              <DropdownMenuItem onClick={() => publishMutation.mutate(exam.id)}>
+                                <Send className="h-4 w-4 mr-2 text-emerald-600" /> Publish Exam
+                              </DropdownMenuItem>
+                            )}
+                            {exam.status !== 'completed' && exam.status !== 'cancelled' && (
+                              <DropdownMenuItem onClick={() => setCancelModalExam(exam)}>
+                                <XCircle className="h-4 w-4 mr-2 text-amber-600" /> Cancel Exam
+                              </DropdownMenuItem>
+                            )}
+                            {exam.status === 'draft' && (
+                              <DropdownMenuItem className="text-destructive" onClick={() => deleteMutation.mutate(exam.id)}>
+                                <Trash2 className="h-4 w-4 mr-2" /> Delete Draft
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="p-4">
+                <DataTablePagination page={page} totalPages={data.totalPages} onPageChange={setPage} />
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Cancel Exam Modal */}
+      {cancelModalExam && (
+        <Dialog open={!!cancelModalExam} onOpenChange={(b) => { if (!b) setCancelModalExam(null); }}>
+          <DialogContent className="glass-modal max-w-md">
+            <DialogHeader>
+              <DialogTitle>Cancel Examination Schedule</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to cancel {cancelModalExam.title}? Please state a cancellation reason for audit logging.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 text-xs">
+              <Label>Cancellation Reason *</Label>
+              <Textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="e.g. Schedule conflict / technical rescheduling..."
+                className="glass-input"
+                rows={3}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCancelModalExam(null)}>Close</Button>
+              <Button
+                variant="destructive"
+                disabled={!cancelReason.trim()}
+                onClick={() => cancelMutation.mutate({ examId: cancelModalExam.id, reason: cancelReason })}
+              >
+                Confirm Cancellation
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );

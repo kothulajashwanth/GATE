@@ -38,3 +38,16 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     def full_name(self) -> str:
         parts = [p for p in (self.first_name, self.last_name) if p]
         return " ".join(parts) if parts else self.email
+
+    @property
+    def name(self) -> str:
+        return self.full_name
+
+    @property
+    def clerk_user_id(self) -> str | None:
+        return self.clerk_id
+
+    @property
+    def status(self) -> str:
+        return "active" if self.is_active else "inactive"
+
