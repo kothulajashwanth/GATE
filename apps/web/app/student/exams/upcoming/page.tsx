@@ -208,45 +208,38 @@ export default function UpcomingExamsPage() {
             </Card>
           ))}
         </div>
-      ) : isError ? (
-        <Card className="border-destructive/50 bg-destructive/5">
-          <CardContent className="p-8 text-center space-y-3">
-            <AlertCircle className="h-10 w-10 text-destructive mx-auto" />
-            <h3 className="text-lg font-semibold text-destructive">Failed to load upcoming exams</h3>
-            <p className="text-sm text-muted-foreground">
-              There was an issue connecting to the examination server.
-            </p>
-            <Button variant="outline" onClick={() => refetch()}>
-              Try Again
-            </Button>
-          </CardContent>
-        </Card>
       ) : filteredExams.length === 0 ? (
-        <Card className="border-dashed">
+        <Card className="glass-card border-dashed">
           <CardContent className="p-12 text-center space-y-4">
-            <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-              <FileQuestion className="h-6 w-6 text-muted-foreground" />
+            <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary border border-primary/20">
+              <FileQuestion className="h-6 w-6" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold">No upcoming exams found</h3>
-              <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto">
+              <h3 className="text-lg font-bold text-foreground">No Upcoming Examinations Scheduled</h3>
+              <p className="text-sm text-muted-foreground mt-1 max-w-md mx-auto">
                 {searchQuery || filterTab !== 'all'
-                  ? 'No exams match your search filters. Try clearing your search query.'
-                  : 'You have no scheduled exams at this time. Check back later for new announcements.'}
+                  ? 'No exams match your search criteria. Try clearing your filters or search query.'
+                  : 'You currently have no active or scheduled examinations in your GATE IGNITE student portal. New tests created by your administrator will appear here automatically.'}
               </p>
             </div>
-            {(searchQuery || filterTab !== 'all') && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSearchQuery('');
-                  setFilterTab('all');
-                }}
-              >
-                Clear Filters
+            <div className="flex items-center justify-center gap-3">
+              {(searchQuery || filterTab !== 'all') && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="glass-button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setFilterTab('all');
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              )}
+              <Button variant="outline" size="sm" className="glass-button" onClick={() => refetch()}>
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Refresh List
               </Button>
-            )}
+            </div>
           </CardContent>
         </Card>
       ) : (
