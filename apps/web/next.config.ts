@@ -1,5 +1,18 @@
 import type { NextConfig } from 'next';
 
+const rawApiUrl =
+  process.env.API_URL ??
+  process.env.NEXT_PUBLIC_API_URL ??
+  (process.env.NODE_ENV === 'development'
+    ? 'http://localhost:8000'
+    : 'https://gate-ds9h.onrender.com');
+
+// Guard against self-referencing rewrites in production if API_URL points back to fabgate.vercel.app
+const apiUrl =
+  rawApiUrl.includes('fabgate.vercel.app') || rawApiUrl.includes('vercel.app')
+    ? 'https://gate-ds9h.onrender.com'
+    : rawApiUrl;
+
 const nextConfig: NextConfig = {
   transpilePackages: ['@examshield/ui', '@examshield/utils', '@examshield/types'],
   images: {
@@ -15,7 +28,6 @@ const nextConfig: NextConfig = {
     },
   },
   async rewrites() {
-    const apiUrl = process.env.API_URL || 'https://gate-ds9h.onrender.com';
     return [
       {
         source: '/api/v1/:path*',

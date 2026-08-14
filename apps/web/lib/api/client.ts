@@ -26,16 +26,19 @@ interface ClientOptions {
 }
 
 export function buildFullUrl(path: string): string {
-  // Browser requests go through the Next/Vercel rewrite. Besides keeping the
-  // API hostname private, this avoids a CORS preflight for every authenticated
-  // request (Authorization and X-Request-Id are non-simple headers).
-  //
-  // Server-side callers retain the configured absolute API URL.
-  let base = (
-    typeof window === 'undefined'
-      ? process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'https://gate-ds9h.onrender.com'
-      : '/api/v1'
-  ).replace(/\/+$/, '');
+  const configuredUrl =
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.API_URL ||
+    (process.env.NODE_ENV === 'development'
+      ? 'http://localhost:8000'
+      : 'https://gate-ds9h.onrender.com');
+
+  let base = configuredUrl.replace(/\/+$/, '');
+
+  // Guard against self-referencing frontend domain in production
+  if (base.includes('fabgate.vercel.app')) {
+    base = 'https://gate-ds9h.onrender.com';
+  }
 
   // Enforce https if base URL uses http (prevent Render HTTP -> HTTPS 301 redirects)
   if (base.startsWith('http://') && base.includes('onrender.com')) {

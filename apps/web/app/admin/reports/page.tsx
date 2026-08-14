@@ -1,5 +1,6 @@
 'use client';
 
+import { buildFullUrl } from '@/lib/api/client';
 import { PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardHeader, CardTitle, Button } from '@examshield/ui';
 import { FileText, Download, BarChart3, FileSpreadsheet } from 'lucide-react';
@@ -9,7 +10,7 @@ export default function AdminReportsPage() {
   const handleExportCsv = async (title: string) => {
     toast.info(`Generating ${title}...`);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/analytics/export`, {
+      const res = await fetch(buildFullUrl('/analytics/export'), {
         headers: {
           Authorization: `Bearer ${localStorage.getItem('auth_token') || ''}`,
         },

@@ -1,5 +1,6 @@
 'use client';
 
+import { buildFullUrl } from '@/lib/api/client';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '@/lib/api/client-provider';
@@ -52,7 +53,7 @@ export default function AdminAnalyticsPage() {
   const handleExportCsv = async () => {
     toast.info('Generating CSV Analytics Summary Report...');
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/analytics/export`, {
+      const res = await fetch(buildFullUrl('/analytics/export'), {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('auth_token') || ''}`,
         },
