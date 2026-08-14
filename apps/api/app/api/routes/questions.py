@@ -91,12 +91,6 @@ class QuestionUpdate(BaseModel):
     changeSummary: str | None = None
 
 
-def _question_out(q: Question) -> QuestionOut:
-    versions_out = [
-        QuestionVersionOut(
-            version=v.version,
-            changeSummary=v.change_summary,
-            createdAt=v.created_at.isoformat(),
 import logging
 
 logger = logging.getLogger("app")

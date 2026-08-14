@@ -17,14 +17,12 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.department import Department
+from app.db.models.academic import Department, Section, Semester, Topic
 from app.db.models.exam import Exam
-from app.db.models.question import Question
+from app.db.models.question import Question, Subject
 from app.db.models.result import ExamResult, ResultStatus
 from app.db.models.session import ExamSession, SessionStatus, ViolationRecord
 from app.db.models.student import Student
-from app.db.models.subject import Subject
-from app.db.models.topic import Topic
 
 
 class AnalyticsService:
@@ -93,7 +91,7 @@ class AnalyticsService:
             "totalViolations": viol_count,
         }
 
-    async def get_department_analytics((self)) -> list[dict[str, Any]]:
+    async def get_department_analytics(self) -> list[dict[str, Any]]:
         """Department-level student attempt and score metrics."""
         depts_res = await self.db.execute(select(Department).where(Department.deleted_at.is_(None)))
         departments = depts_res.scalars().all()

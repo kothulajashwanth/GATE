@@ -27,6 +27,11 @@ class AppError(Exception):
         self.details = details
 
 
+class BadRequestError(AppError):
+    def __init__(self, message: str, *, details: Any = None) -> None:
+        super().__init__(message, code="bad_request", status_code=status.HTTP_400_BAD_REQUEST, details=details)
+
+
 class NotFoundError(AppError):
     def __init__(self, message: str, *, details: Any = None) -> None:
         super().__init__(message, code="not_found", status_code=status.HTTP_404_NOT_FOUND, details=details)

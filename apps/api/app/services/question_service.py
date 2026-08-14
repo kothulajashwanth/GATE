@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import NotFoundError, ValidationError
+from app.db.models.academic import Topic
 from app.db.models.question import (
     BloomLevel,
     Difficulty,
@@ -17,7 +18,6 @@ from app.db.models.question import (
     QuestionType,
     QuestionVersion,
     Subject,
-    Topic,
     UploadedFile,
 )
 from app.db.models.user import User
