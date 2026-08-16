@@ -1,7 +1,41 @@
+import os
+import re
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _resolve_env_placeholders(val: str) -> str:
+    """Expand environment variable placeholders like ${POSTGRES_PORT} in configuration strings."""
+    if not val:
+        return val
+
+    # 1. Expand environment variables using standard OS env lookup
+    expanded = os.path.expandvars(val)
+
+    # 2. Handle any unexpanded ${VAR} or $VAR placeholders
+    def _replace_var(match: re.Match) -> str:
+        var_name = match.group(1) or match.group(2)
+        env_val = os.getenv(var_name)
+        if env_val and not env_val.startswith("$"):
+            return env_val
+        defaults = {
+            "POSTGRES_PORT": "5432",
+            "POSTGRES_HOST": "localhost",
+            "POSTGRES_USER": "postgres",
+            "POSTGRES_PASSWORD": "",
+            "POSTGRES_DB": "postgres",
+        }
+        return defaults.get(var_name, "")
+
+    expanded = re.sub(r"\$\{([A-Za-z0-9_]+)\}|\$([A-Za-z0-9_]+)", _replace_var, expanded)
+
+    # 3. Guard against remaining non-numeric port specs (e.g. :${POSTGRES_PORT})
+    expanded = re.sub(r":\$\{?[A-Za-z0-9_]*\}?(/|$)", r":5432\1", expanded)
+
+    return expanded
 
 
 class Settings(BaseSettings):
@@ -17,6 +51,13 @@ class Settings(BaseSettings):
 
     # ---- Database ----
     database_url: str = "postgresql+asyncpg://examshield:examshield_dev@localhost:5432/examshield"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def sanitize_database_url(cls, v: str) -> str:
+        if isinstance(v, str):
+            return _resolve_env_placeholders(v)
+        return v
 
     # ---- Redis ----
     redis_url: str = "redis://localhost:6379/0"
@@ -90,7 +131,7 @@ class Settings(BaseSettings):
 
     @property
     def async_database_url(self) -> str:
-        url = self.database_url
+        url = _resolve_env_placeholders(self.database_url)
         if url.startswith("postgresql://"):
             return url.replace("postgresql://", "postgresql+asyncpg://", 1)
         elif url.startswith("postgres://"):
@@ -99,7 +140,7 @@ class Settings(BaseSettings):
 
     @property
     def sync_database_url(self) -> str:
-        url = self.database_url
+        url = _resolve_env_placeholders(self.database_url)
         if url.startswith("postgresql+asyncpg://"):
             return url.replace("postgresql+asyncpg://", "postgresql://", 1)
         elif url.startswith("postgres+asyncpg://"):
@@ -109,7 +150,7 @@ class Settings(BaseSettings):
         return url
 
 
-
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
