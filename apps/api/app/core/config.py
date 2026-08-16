@@ -70,6 +70,7 @@ class Settings(BaseSettings):
         origins = [o.strip().rstrip("/") for o in self.allowed_origins.split(",") if o.strip()]
         required_origins = [
             "https://fabgate.vercel.app",
+            "https://gate-ds9h.onrender.com",
             "https://fabgate-80thb2jl5-fab13.vercel.app",
             "http://localhost:3000",
             "http://localhost:3001",
