@@ -17,7 +17,8 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # Override sqlalchemy.url from settings (env var DATABASE_URL wins).
-config.set_main_option("sqlalchemy.url", get_settings().async_database_url)
+database_url = get_settings().async_database_url.replace("%", "%%")
+config.set_main_option("sqlalchemy.url", database_url)
 
 
 def run_migrations_offline() -> None:

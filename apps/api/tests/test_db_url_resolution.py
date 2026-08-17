@@ -30,3 +30,23 @@ def test_settings_async_database_url_resolution():
 
     # Clean up test env var override
     del os.environ["DATABASE_URL"]
+    get_settings.cache_clear()
+
+
+def test_alembic_config_with_percent_in_url():
+    from alembic.config import Config
+
+    os.environ["DATABASE_URL"] = "postgresql+asyncpg://postgres.zamewnqegiszvekkzteq:Fab%407025@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+    get_settings.cache_clear()
+
+    cfg = Config("alembic.ini")
+    database_url = get_settings().async_database_url.replace("%", "%%")
+    cfg.set_main_option("sqlalchemy.url", database_url)
+
+    # Check that retrieving the option returns unescaped %40 without throwing ValueError: invalid interpolation syntax
+    retrieved_url = cfg.get_main_option("sqlalchemy.url")
+    assert retrieved_url == "postgresql+asyncpg://postgres.zamewnqegiszvekkzteq:Fab%407025@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+
+    del os.environ["DATABASE_URL"]
+    get_settings.cache_clear()
+
