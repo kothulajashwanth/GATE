@@ -63,7 +63,10 @@ async def list_students(
     is_active: bool | None = None,
 ) -> PaginatedResponse[StudentRow]:
     try:
-        logger.info(f"[STUDENTS] REQUEST RECEIVED: page={page}, page_size={page_size}, query={query}")
+        actor_id_str = str(actor.id) if actor and hasattr(actor, "id") else "unknown"
+        logger.info(
+            f"[STUDENTS] GET /students request received: actor_id={actor_id_str}, page={page}, page_size={page_size}, query={query}"
+        )
         rows, total = await StudentService(db).list(
             query=query,
             department_id=department_id,
@@ -73,12 +76,12 @@ async def list_students(
             page=page,
             page_size=page_size,
         )
-        logger.info(f"[STUDENTS] QUERY SUCCESSFUL: total={total}, returned_rows={len(rows)}")
+        logger.info(f"[STUDENTS] Query completed: total_records={total}, returned_rows={len(rows)}")
         items = [StudentRow(**row) for row in rows]
         return PaginatedResponse.build(items, page, page_size, total)
     except Exception as exc:
         logger.error(
-            f"[STUDENTS_ERROR] Exception in list_students endpoint: {exc.__class__.__name__}: {str(exc)}",
+            f"[STUDENTS_ERROR] GET /students failed: {exc.__class__.__name__}: {str(exc)}",
             exc_info=True,
         )
         raise

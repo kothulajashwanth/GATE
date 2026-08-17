@@ -213,7 +213,7 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
         from app.db.models.student import Student
         from sqlalchemy import select
         st_res = await db.execute(select(Student).where(Student.user_id == user.id))
-        if not st_res.scalar_one_or_none():
+        if not st_res.scalars().first():
             student = Student(
                 user_id=user.id,
                 roll_number=f"STU-{str(user.id)[:8].upper()}",
