@@ -83,10 +83,6 @@ async def _student_or_404(db: AsyncSession, user_id) -> Student:
         student = Student(
             user_id=user_id,
             roll_number=f"STU-{str(user_id)[:8].upper()}",
-            first_name=user.email.split('@')[0].capitalize() if (user and user.email) else "Student",
-            last_name="Account",
-            email=user.email if user else f"student-{user_id}@gateignite.local",
-            is_active=True,
         )
         db.add(student)
         await db.commit()

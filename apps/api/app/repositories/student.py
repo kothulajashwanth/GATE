@@ -65,8 +65,31 @@ class StudentRepository(BaseRepository[Student]):
         if is_active is not None:
             base = base.where(User.is_active == is_active)
 
-        count_stmt = select(func.count()).select_from(base.order_by(None).subquery())
-        total = int((await self.db.execute(count_stmt)).scalar_one())
+        count_base = (
+            select(func.count(Student.id))
+            .select_from(Student)
+            .join(User, Student.user_id == User.id)
+            .where(Student.deleted_at.is_(None))
+        )
+        if query:
+            count_base = count_base.where(
+                or_(
+                    Student.roll_number.ilike(like),
+                    User.first_name.ilike(like),
+                    User.last_name.ilike(like),
+                    User.email.ilike(like),
+                )
+            )
+        if department_id:
+            count_base = count_base.where(Student.department_id == department_id)
+        if semester_id:
+            count_base = count_base.where(Student.semester_id == semester_id)
+        if section_id:
+            count_base = count_base.where(Student.section_id == section_id)
+        if is_active is not None:
+            count_base = count_base.where(User.is_active == is_active)
+
+        total = int((await self.db.execute(count_base)).scalar_one())
 
         rows_result = await self.db.execute(
             base.order_by(User.first_name).limit(page_size).offset((page - 1) * page_size)

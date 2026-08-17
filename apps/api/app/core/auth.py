@@ -194,10 +194,6 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
             student = Student(
                 user_id=user.id,
                 roll_number=f"STU-{str(user.id)[:8].upper()}",
-                first_name=user.first_name,
-                last_name=user.last_name or "",
-                email=user.email,
-                is_active=True,
             )
             db.add(student)
 
@@ -212,10 +208,6 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
             student = Student(
                 user_id=user.id,
                 roll_number=f"STU-{str(user.id)[:8].upper()}",
-                first_name=user.first_name,
-                last_name=user.last_name or "",
-                email=user.email,
-                is_active=True,
             )
             db.add(student)
             await db.commit()

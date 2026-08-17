@@ -62,22 +62,26 @@ async def list_students(
     section_id: str | None = None,
     is_active: bool | None = None,
 ) -> PaginatedResponse[StudentRow]:
-    logger.info(f"[STUDENTS] REQUEST RECEIVED: page={page}, page_size={page_size}")
-    logger.info(f"[STUDENTS] AUTHENTICATION PASSED: user_id={actor.id}, email={actor.email}, role={actor.role}")
-    logger.info("[STUDENTS] STARTING DATABASE QUERY")
-    rows, total = await StudentService(db).list(
-        query=query,
-        department_id=department_id,
-        semester_id=semester_id,
-        section_id=section_id,
-        is_active=is_active,
-        page=page,
-        page_size=page_size,
-    )
-    logger.info(f"[STUDENTS] DATABASE QUERY COMPLETED: count={total}")
-    items = [StudentRow(**row) for row in rows]
-    logger.info("[STUDENTS] RETURNING STUDENTS RESPONSE")
-    return PaginatedResponse.build(items, page, page_size, total)
+    try:
+        logger.info(f"[STUDENTS] REQUEST RECEIVED: page={page}, page_size={page_size}, query={query}")
+        rows, total = await StudentService(db).list(
+            query=query,
+            department_id=department_id,
+            semester_id=semester_id,
+            section_id=section_id,
+            is_active=is_active,
+            page=page,
+            page_size=page_size,
+        )
+        logger.info(f"[STUDENTS] QUERY SUCCESSFUL: total={total}, returned_rows={len(rows)}")
+        items = [StudentRow(**row) for row in rows]
+        return PaginatedResponse.build(items, page, page_size, total)
+    except Exception as exc:
+        logger.error(
+            f"[STUDENTS_ERROR] Exception in list_students endpoint: {exc.__class__.__name__}: {str(exc)}",
+            exc_info=True,
+        )
+        raise
 
 
 @router.get("/template", summary="Download student bulk import template (.xlsx)")

@@ -12,9 +12,9 @@ class Student(Base, TimestampMixin, SoftDeleteMixin):
     id: Mapped[object] = guid_pk()
     user_id: Mapped[object] = mapped_column(guid(), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
     roll_number: Mapped[str] = mapped_column(String(40), unique=True, index=True, nullable=False)
-    department_id: Mapped[object] = mapped_column(guid(), ForeignKey("departments.id"), index=True, nullable=False)
-    semester_id: Mapped[object] = mapped_column(guid(), ForeignKey("semesters.id"), index=True, nullable=False)
-    section_id: Mapped[object] = mapped_column(guid(), ForeignKey("sections.id"), index=True, nullable=False)
+    department_id: Mapped[object | None] = mapped_column(guid(), ForeignKey("departments.id"), index=True, nullable=True)
+    semester_id: Mapped[object | None] = mapped_column(guid(), ForeignKey("semesters.id"), index=True, nullable=True)
+    section_id: Mapped[object | None] = mapped_column(guid(), ForeignKey("sections.id"), index=True, nullable=True)
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     parent_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     parent_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
@@ -24,6 +24,14 @@ class Student(Base, TimestampMixin, SoftDeleteMixin):
     department = relationship("Department")
     semester = relationship("Semester")
     section = relationship("Section")
+
+    @property
+    def first_name(self) -> str:
+        return self.user.first_name if (self.user and self.user.first_name) else ""
+
+    @property
+    def last_name(self) -> str:
+        return self.user.last_name if (self.user and self.user.last_name) else ""
 
     @property
     def full_name(self) -> str:
