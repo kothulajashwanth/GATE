@@ -99,6 +99,34 @@ class CurrentUser:
         return self.user.role
 
 
+import logging
+
+logger = logging.getLogger("app")
+
+
+def _is_admin_identity(email: str, claims: dict | None) -> bool:
+    if not claims:
+        claims = {}
+
+    role_val = str(claims.get("role") or "").lower()
+    org_role = str(claims.get("org_role") or "").lower()
+
+    meta = claims.get("public_metadata") or claims.get("metadata") or {}
+    meta_role = ""
+    if isinstance(meta, dict):
+        meta_role = str(meta.get("role") or meta.get("roles") or "").lower()
+
+    combined_claims = f"{role_val} {org_role} {meta_role}"
+    if "admin" in combined_claims or "super" in combined_claims:
+        return True
+
+    email_lower = (email or "").lower()
+    if any(keyword in email_lower for keyword in ["admin", "jashwanth", "kothula"]):
+        return True
+
+    return False
+
+
 async def _internal_or_clerk_user(
     credentials: HTTPAuthorizationCredentials | None,
     x_internal_key: str | None,
@@ -108,23 +136,33 @@ async def _internal_or_clerk_user(
 
     if x_internal_key:
         if x_internal_key != settings.api_internal_key:
+            logger.warning("[AUTH_401] Invalid X-Internal-Key header")
             raise UnauthorizedError("Invalid internal key")
         from app.repositories.user import UserRepository
 
         return await UserRepository(db).get_or_create_system(Role.SUPER_ADMIN)
 
     if not credentials:
+        logger.warning("[AUTH_401] Missing Authorization Bearer token header")
         raise UnauthorizedError("Not authenticated")
 
-    claims = await _verify_clerk_token(credentials.credentials)
+    try:
+        claims = await _verify_clerk_token(credentials.credentials)
+    except Exception as exc:
+        logger.warning(f"[AUTH_401] Clerk JWT verification failed: {exc.__class__.__name__}: {str(exc)}")
+        raise
+
     clerk_id = claims.get("sub")
     if not clerk_id:
+        logger.warning("[AUTH_401] Clerk JWT missing 'sub' claim")
         raise UnauthorizedError("Invalid token claims")
 
     user = await _load_user(db, clerk_id, claims)
     if not user:
+        logger.warning(f"[AUTH_401] User not found for clerk_id={clerk_id}")
         raise UnauthorizedError("User not found", code="user_not_found")
     if not user.is_active:
+        logger.warning(f"[AUTH_403] Disabled account attempt: user_id={user.id}")
         raise ForbiddenError("Account is disabled")
     return user
 
@@ -143,7 +181,10 @@ def require_roles(*roles: Role):
 
     async def checker(user: Annotated[User, Depends(get_current_user)]) -> User:
         if user.role not in roles:
-            raise ForbiddenError("Insufficient permissions")
+            logger.warning(
+                f"[AUTH_403] Insufficient role permissions for user_id={user.id}, email={user.email}, user_role={user.role}. Required roles={[r.value for r in roles]}"
+            )
+            raise ForbiddenError(f"Insufficient permissions. Role '{user.role}' cannot access this endpoint.")
         return user
 
     return checker
@@ -173,14 +214,13 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
         existing_by_email = await repo.get_by_email(email)
         if existing_by_email:
             existing_by_email.clerk_id = clerk_id
+            if existing_by_email.role == Role.STUDENT and _is_admin_identity(email, claims):
+                existing_by_email.role = Role.ADMIN
             await db.commit()
             await db.refresh(existing_by_email)
             return existing_by_email
 
-        role_claim = (claims.get("role") or "").lower() if claims else ""
-        user_role = Role.STUDENT
-        if "admin" in role_claim or "admin" in email.lower() or "jashwanth" in email.lower() or "kothula" in email.lower():
-            user_role = Role.ADMIN
+        user_role = Role.ADMIN if _is_admin_identity(email, claims) else Role.STUDENT
 
         first_name = claims.get("given_name") if claims else None
         if not first_name:
@@ -200,6 +240,7 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
 
         if user.role == Role.STUDENT:
             from app.db.models.student import Student
+
             student = Student(
                 user_id=user.id,
                 roll_number=f"STU-{str(user.id)[:8].upper()}",
@@ -208,10 +249,17 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
 
         await db.commit()
         await db.refresh(user)
+    else:
+        # Sync role if user is currently STUDENT but claims/email qualify for ADMIN
+        if user.role == Role.STUDENT and _is_admin_identity(user.email, claims):
+            user.role = Role.ADMIN
+            await db.commit()
+            await db.refresh(user)
 
     if user and user.role == Role.STUDENT:
         from app.db.models.student import Student
         from sqlalchemy import select
+
         st_res = await db.execute(select(Student).where(Student.user_id == user.id))
         if not st_res.scalars().first():
             student = Student(
