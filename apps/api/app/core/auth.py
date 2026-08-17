@@ -76,7 +76,10 @@ async def _get_jwks_key(jwks_url: str) -> dict:
     # Pick the first RSA signing key (RS256) advertised by the provider.
     key = next((k for k in keys if k.get("alg", "").startswith("RS")), keys[0])
     if redis is not None:
-        await redis.set(cache_key, json.dumps(key), ex=300)
+        try:
+            await redis.set(cache_key, json.dumps(key), ex=300)
+        except Exception:
+            pass
     return key
 
 
@@ -156,9 +159,15 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
         email = None
         if claims:
             email = claims.get("email") or claims.get("email_address")
-            if not email and "email_addresses" in claims and isinstance(claims["email_addresses"], list) and len(claims["email_addresses"]) > 0:
-                email = claims["email_addresses"][0]
-        if not email:
+            if not email and "email_addresses" in claims:
+                addrs = claims["email_addresses"]
+                if isinstance(addrs, list) and len(addrs) > 0:
+                    first = addrs[0]
+                    if isinstance(first, dict):
+                        email = first.get("email_address") or first.get("email")
+                    elif isinstance(first, str):
+                        email = first
+        if not email or not isinstance(email, str):
             email = f"{clerk_id}@gateignite.local"
 
         existing_by_email = await repo.get_by_email(email)

@@ -53,10 +53,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if settings.environment == "development":
             return await call_next(request)
 
-        redis = get_redis()
-        client_ip = request.client.host if request.client else "unknown"
-        key = f"rl:{client_ip}"
         try:
+            redis = get_redis()
+            client_ip = request.client.host if request.client else "unknown"
+            key = f"rl:{client_ip}"
             count = await redis.incr(key)
             if count == 1:
                 await redis.expire(key, settings.rate_limit_window_seconds)
@@ -68,6 +68,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 content={"error": {"code": "rate_limited", "message": "Too many requests"}},
                 headers={"Retry-After": str(settings.rate_limit_window_seconds)},
             )
+        except Exception as err:
+            logger.warning(f"Rate limiting skipped due to Redis error: {err}")
+
         return await call_next(request)
 
 

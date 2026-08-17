@@ -37,17 +37,31 @@ class StudentRepository(BaseRepository[Student]):
 
         Returns (rows, total). Rows are dicts shaped for the API response.
         """
+        import uuid
+
+        def _clean_uuid(val: Any) -> uuid.UUID | None:
+            if not val or not isinstance(val, str) or val.strip() in ("", "all", "none", "null", "undefined"):
+                return None
+            try:
+                return uuid.UUID(val.strip())
+            except ValueError:
+                return None
+
+        dept_uuid = _clean_uuid(department_id)
+        sem_uuid = _clean_uuid(semester_id)
+        sec_uuid = _clean_uuid(section_id)
+
         base = (
             select(Student, User, Department, Semester, Section)
             .join(User, Student.user_id == User.id)
             .outerjoin(Department, Student.department_id == Department.id)
             .outerjoin(Semester, Student.semester_id == Semester.id)
             .outerjoin(Section, Student.section_id == Section.id)
-            .where(Student.deleted_at.is_(None))
+            .where(Student.deleted_at.is_(None), User.deleted_at.is_(None))
         )
 
-        if query:
-            like = f"%{query}%"
+        if query and query.strip():
+            like = f"%{query.strip()}%"
             base = base.where(
                 or_(
                     Student.roll_number.ilike(like),
@@ -56,12 +70,12 @@ class StudentRepository(BaseRepository[Student]):
                     User.email.ilike(like),
                 )
             )
-        if department_id:
-            base = base.where(Student.department_id == department_id)
-        if semester_id:
-            base = base.where(Student.semester_id == semester_id)
-        if section_id:
-            base = base.where(Student.section_id == section_id)
+        if dept_uuid:
+            base = base.where(Student.department_id == dept_uuid)
+        if sem_uuid:
+            base = base.where(Student.semester_id == sem_uuid)
+        if sec_uuid:
+            base = base.where(Student.section_id == sec_uuid)
         if is_active is not None:
             base = base.where(User.is_active == is_active)
 
@@ -69,9 +83,10 @@ class StudentRepository(BaseRepository[Student]):
             select(func.count(Student.id))
             .select_from(Student)
             .join(User, Student.user_id == User.id)
-            .where(Student.deleted_at.is_(None))
+            .where(Student.deleted_at.is_(None), User.deleted_at.is_(None))
         )
-        if query:
+        if query and query.strip():
+            like = f"%{query.strip()}%"
             count_base = count_base.where(
                 or_(
                     Student.roll_number.ilike(like),
@@ -80,12 +95,12 @@ class StudentRepository(BaseRepository[Student]):
                     User.email.ilike(like),
                 )
             )
-        if department_id:
-            count_base = count_base.where(Student.department_id == department_id)
-        if semester_id:
-            count_base = count_base.where(Student.semester_id == semester_id)
-        if section_id:
-            count_base = count_base.where(Student.section_id == section_id)
+        if dept_uuid:
+            count_base = count_base.where(Student.department_id == dept_uuid)
+        if sem_uuid:
+            count_base = count_base.where(Student.semester_id == sem_uuid)
+        if sec_uuid:
+            count_base = count_base.where(Student.section_id == sec_uuid)
         if is_active is not None:
             count_base = count_base.where(User.is_active == is_active)
 
@@ -97,14 +112,14 @@ class StudentRepository(BaseRepository[Student]):
         rows = [
             {
                 "id": str(student.id),
-                "rollNumber": student.roll_number,
-                "name": user.full_name,
-                "email": user.email,
+                "rollNumber": student.roll_number or f"STU-{str(student.id)[:8].upper()}",
+                "name": user.full_name if user else (student.roll_number or "Student"),
+                "email": user.email if user else "",
                 "phone": student.phone,
-                "isActive": user.is_active,
-                "department": {"id": str(dept.id), "name": dept.name} if dept else None,
-                "semester": {"id": str(sem.id), "name": sem.name} if sem else None,
-                "section": {"id": str(sec.id), "name": sec.name} if sec else None,
+                "isActive": bool(user.is_active) if user else True,
+                "department": {"id": str(dept.id), "name": dept.name} if (dept and dept.id and dept.name) else None,
+                "semester": {"id": str(sem.id), "name": sem.name} if (sem and sem.id and sem.name) else None,
+                "section": {"id": str(sec.id), "name": sec.name} if (sec and sec.id and sec.name) else None,
             }
             for student, user, dept, sem, sec in rows_result.all()
         ]
