@@ -10,7 +10,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@examshield/ui';
 import {
-  Check, ChevronRight, ChevronLeft, ShieldCheck, Layers, BookOpen, Clock, Calendar, AlertTriangle, Send, Loader2, Sparkles, Plus, Trash2, ArrowRight, CheckCircle2, FileCheck
+  Check, ChevronRight, ChevronLeft, ShieldCheck, Layers, BookOpen, Clock, Calendar, AlertTriangle, Send, Loader2, Sparkles, Plus, Trash2, ArrowRight, CheckCircle2, FileCheck, Search, UploadCloud
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
@@ -60,9 +60,12 @@ export default function CreateExamWizardPage() {
   const [semId, setSemId] = useState('');
   const [secId, setSecId] = useState('');
 
-  // Questions Selected
+  // Questions Selected & Picker Filters
   const [selectedQuestions, setSelectedQuestions] = useState<QuestionRow[]>([]);
   const [marksOverride, setMarksOverride] = useState<Record<string, number>>({});
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [pickerType, setPickerType] = useState('');
+  const [pickerDifficulty, setPickerDifficulty] = useState('');
 
   // Created Exam ID
   const [createdExamId, setCreatedExamId] = useState<string | null>(null);
@@ -89,13 +92,37 @@ export default function CreateExamWizardPage() {
     queryFn: () => api.get<{ id: string; name: string }[]>('/academic/sections'),
   });
 
-  const { data: questionBank } = useQuery({
-    queryKey: ['question-bank-picker', subjectId],
-    queryFn: () => api.get<Paginated<QuestionRow>>('/questions', { page_size: 50, subject_id: subjectId || undefined }),
+  const pickerParams: Record<string, unknown> = {
+    page_size: 100,
+    is_verified: true,
+  };
+  if (subjectId) pickerParams.subject_id = subjectId;
+  if (pickerSearch) pickerParams.search = pickerSearch;
+  if (pickerType && pickerType !== 'all') pickerParams.question_type = pickerType;
+  if (pickerDifficulty && pickerDifficulty !== 'all') pickerParams.difficulty = pickerDifficulty;
+
+  const { data: questionBank, isLoading: loadingQuestions } = useQuery({
+    queryKey: ['question-bank-picker', pickerParams],
+    queryFn: () => api.get<Paginated<QuestionRow>>('/questions', pickerParams),
   });
 
   const availableQuestions = questionBank?.items || [];
   const totalCalculatedMarks = selectedQuestions.reduce((acc, q) => acc + (marksOverride[q.id] || q.marks || 1), 0);
+
+  const handleSelectAllAvailable = () => {
+    const newSelected = [...selectedQuestions];
+    availableQuestions.forEach((q) => {
+      if (!newSelected.some((s) => s.id === q.id)) {
+        newSelected.push(q);
+      }
+    });
+    setSelectedQuestions(newSelected);
+  };
+
+  const handleDeselectAllAvailable = () => {
+    const availableIds = new Set(availableQuestions.map((q) => q.id));
+    setSelectedQuestions(selectedQuestions.filter((q) => !availableIds.has(q.id)));
+  };
 
   // Step 1: Create Exam Draft
   const handleCreateDraft = async () => {
@@ -303,21 +330,94 @@ export default function CreateExamWizardPage() {
           {step === 2 && (
             <Card className="glass-card">
               <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="text-base font-bold flex items-center gap-2">
-                  <BookOpen className="h-5 w-5 text-amber-500" /> Step 2: Question Bank Picker ({selectedQuestions.length} Selected)
-                </CardTitle>
-                <Link href="/admin/ai-generator">
-                  <Button size="sm" variant="outline" className="glass-button text-xs">
-                    <Sparkles className="h-3.5 w-3.5 mr-1 text-amber-500" /> AI Generator
-                  </Button>
-                </Link>
+                <div>
+                  <CardTitle className="text-base font-bold flex items-center gap-2">
+                    <BookOpen className="h-5 w-5 text-amber-500" /> Step 2: Question Selector
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">Select approved questions from the Question Bank for this examination.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs font-mono font-bold py-1 px-2 bg-primary/10 text-primary border-primary/30">
+                    Selected: {selectedQuestions.length} | Marks: {totalCalculatedMarks}
+                  </Badge>
+                  <Link href="/admin/ai-generator">
+                    <Button size="sm" variant="outline" className="glass-button text-xs">
+                      <Sparkles className="h-3.5 w-3.5 mr-1 text-amber-500" /> AI Generator
+                    </Button>
+                  </Link>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4 text-xs">
-                <p className="text-muted-foreground">Select approved questions from Question Bank to include in this exam.</p>
+                {/* Search & Filter Toolbar */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      className="pl-8 glass-input text-xs h-9"
+                      placeholder="Search questions by text..."
+                      value={pickerSearch}
+                      onChange={(e) => setPickerSearch(e.target.value)}
+                    />
+                  </div>
+                  <Select value={pickerType} onValueChange={setPickerType}>
+                    <SelectTrigger className="glass-input text-xs h-9"><SelectValue placeholder="Question Type" /></SelectTrigger>
+                    <SelectContent className="glass-modal">
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="mcq">MCQ</SelectItem>
+                      <SelectItem value="true_false">True / False</SelectItem>
+                      <SelectItem value="fill_blank">Fill in Blank</SelectItem>
+                      <SelectItem value="multi_select">Multi Select</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={pickerDifficulty} onValueChange={setPickerDifficulty}>
+                    <SelectTrigger className="glass-input text-xs h-9"><SelectValue placeholder="Difficulty" /></SelectTrigger>
+                    <SelectContent className="glass-modal">
+                      <SelectItem value="all">All Difficulties</SelectItem>
+                      <SelectItem value="easy">Easy</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
+                {/* Selection Toolbar */}
+                <div className="flex items-center justify-between bg-muted/40 p-2.5 rounded-xl border border-border/40">
+                  <span className="font-semibold text-muted-foreground text-[11px]">
+                    Available Questions: {availableQuestions.length}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={handleSelectAllAvailable} disabled={!availableQuestions.length}>
+                      Select All
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={handleDeselectAllAvailable} disabled={!availableQuestions.length}>
+                      Deselect All
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Questions List */}
                 <div className="max-h-96 overflow-y-auto space-y-2 border border-border/40 rounded-xl p-2">
-                  {!availableQuestions.length ? (
-                    <div className="p-6 text-center text-muted-foreground">No questions found in Question Bank for selected subject.</div>
+                  {loadingQuestions ? (
+                    <div className="p-8 text-center text-muted-foreground flex items-center justify-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" /> Loading approved questions...
+                    </div>
+                  ) : !availableQuestions.length ? (
+                    <div className="p-8 text-center space-y-3">
+                      <p className="text-muted-foreground font-semibold text-sm">No approved questions are available for this subject.</p>
+                      <p className="text-xs text-muted-foreground">Import or approve questions in the Question Bank before adding them to exams.</p>
+                      <div className="flex items-center justify-center gap-3 pt-2">
+                        <Link href="/admin/question-bank">
+                          <Button size="sm" variant="outline" className="glass-button">
+                            <BookOpen className="h-4 w-4 mr-1.5" /> Go to Question Bank
+                          </Button>
+                        </Link>
+                        <Link href="/admin/question-repository">
+                          <Button size="sm" variant="default" className="glass-button bg-primary text-white">
+                            <UploadCloud className="h-4 w-4 mr-1.5" /> Import Questions
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
                   ) : (
                     availableQuestions.map((q) => {
                       const isSel = selectedQuestions.some((s) => s.id === q.id);
@@ -326,7 +426,7 @@ export default function CreateExamWizardPage() {
                           key={q.id}
                           onClick={() => toggleSelectQuestion(q)}
                           className={`p-3 rounded-xl border cursor-pointer flex items-center justify-between gap-4 transition-all ${
-                            isSel ? 'bg-primary/15 border-primary font-bold' : 'bg-muted/30 border-border/40 hover:bg-muted/60'
+                            isSel ? 'bg-primary/15 border-primary font-bold shadow-sm' : 'bg-muted/30 border-border/40 hover:bg-muted/60'
                           }`}
                         >
                           <div className="space-y-1 overflow-hidden">
@@ -346,9 +446,13 @@ export default function CreateExamWizardPage() {
 
                 <div className="flex justify-between pt-2">
                   <Button variant="outline" onClick={() => setStep(1)}>Back</Button>
-                  <Button className="glass-button bg-primary text-white" disabled={isSubmitting} onClick={handleSaveQuestions}>
+                  <Button
+                    className="glass-button bg-primary text-white"
+                    disabled={isSubmitting || !selectedQuestions.length}
+                    onClick={handleSaveQuestions}
+                  >
                     {isSubmitting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                    Save Questions & Continue <ArrowRight className="h-4 w-4 ml-2" />
+                    Save Questions & Continue ({selectedQuestions.length}) <ArrowRight className="h-4 w-4 ml-2" />
                   </Button>
                 </div>
               </CardContent>

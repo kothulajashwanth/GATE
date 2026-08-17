@@ -179,9 +179,18 @@ export default function ExamPage() {
     };
   }, [api, session]);
 
-  // Tab switch & visibility detector
+  // Fullscreen, tab switch, shortcut & contextmenu anti-cheat detectors
   useEffect(() => {
     if (!session?.securityMode) return;
+
+    const handleFullscreenChange = () => {
+      const inFs = !!document.fullscreenElement;
+      setIsFullscreen(inFs);
+      if (!inFs) {
+        setSecurityViolations((prev) => [...prev, 'Exited fullscreen mode']);
+        recordViolation('FULLSCREEN_EXIT', 'Exited fullscreen examination mode');
+      }
+    };
 
     const handleVisibilityChange = () => {
       if (document.hidden) {
@@ -191,29 +200,83 @@ export default function ExamPage() {
     };
 
     const handleBlur = () => {
-      // On mobile/touch devices, blur triggers when touch inputs or soft keyboards open.
-      // Only record focus loss if document is also hidden or non-touch desktop device.
       const isMobileTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
       if (document.hidden || !isMobileTouch) {
         setSecurityViolations((prev) => [...prev, 'Window lost focus']);
-        recordViolation('FOCUS_LOST', 'Window lost focus');
+        recordViolation('WINDOW_BLUR', 'Window lost focus or minimized');
       }
     };
 
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+      const key = e.key.toUpperCase();
+
+      if (
+        e.key === 'F12' ||
+        (isCtrlOrCmd && ['C', 'V', 'X', 'A', 'P', 'S', 'U'].includes(key)) ||
+        (isCtrlOrCmd && e.shiftKey && ['I', 'J', 'C', 'M'].includes(key))
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        setSecurityViolations((prev) => [...prev, `Restricted key (${e.key}) pressed`]);
+        recordViolation('RESTRICTED_SHORTCUT', `Attempted restricted shortcut key (${e.key})`);
+      }
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      recordViolation('RIGHT_CLICK', 'Right-click context menu prevented');
+    };
+
+    const handleSelectStart = (e: Event) => {
+      e.preventDefault();
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      recordViolation('REFRESH_ATTEMPT', 'Attempted page refresh or tab closure');
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('blur', handleBlur);
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('contextmenu', handleContextMenu, true);
+    document.addEventListener('selectstart', handleSelectStart, true);
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('contextmenu', handleContextMenu, true);
+      document.removeEventListener('selectstart', handleSelectStart, true);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, [session, recordViolation]);
 
-  const handleAnswerChange = (ans: string[]) => {
+  const requestFullscreenMode = () => {
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+  };
+
+  const handleAnswerChange = async (ans: string[]) => {
     if (!session) return;
     const q = session.questions[currentIndex];
     if (!q) return;
     setAnswers((prev) => ({ ...prev, [q.id]: ans }));
+
+    try {
+      await api.post(`/exam-session/${session.sessionId}/answer`, {
+        questionId: q.id,
+        answer: ans,
+      });
+    } catch {
+      // Auto-saved locally, retried on step navigation
+    }
   };
 
   const navigate = (delta: number) => {
@@ -271,6 +334,22 @@ export default function ExamPage() {
 
   return (
     <div className="min-h-screen bg-background bg-ambient-light flex flex-col selection:bg-none">
+      {/* Termination Lock Overlay */}
+      {(session.status === 'terminated' || warnings >= session.maxWarnings) && (
+        <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-md flex items-center justify-center p-4">
+          <Card className="glass-modal max-w-md p-6 text-center space-y-4 border-rose-500/50">
+            <AlertTriangle className="h-12 w-12 text-rose-500 mx-auto animate-bounce" />
+            <h2 className="text-xl font-bold text-rose-600">Examination Terminated</h2>
+            <p className="text-xs text-muted-foreground">
+              Your exam attempt has been force-terminated due to exceeding security warning limits. Your answers up to this point have been automatically submitted.
+            </p>
+            <Button variant="destructive" className="w-full" onClick={() => router.push('/student')}>
+              Return to Student Dashboard
+            </Button>
+          </Card>
+        </div>
+      )}
+
       {/* Top Restrained Glass Header */}
       <header className="sticky top-0 z-40 glass-navbar px-3 sm:px-6 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
@@ -281,8 +360,13 @@ export default function ExamPage() {
           </div>
         </div>
 
-        {/* Live Timer & Warnings */}
+        {/* Live Timer, Fullscreen Prompt & Warnings */}
         <div className="flex items-center gap-2 sm:gap-4 ml-auto">
+          {!isFullscreen && (
+            <Button size="sm" variant="outline" onClick={requestFullscreenMode} className="text-xs h-7 glass-button">
+              Enter Fullscreen Mode
+            </Button>
+          )}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-mono font-bold text-xs sm:text-sm">
             <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
             {formatDuration(timeRemaining)}

@@ -202,7 +202,7 @@ def parse_text_to_questions(text: str) -> list[dict[str, Any]]:
                 options = ["True", "False"]
                 q_type = QuestionType.TRUE_FALSE
             else:
-                q_type = QuestionType.SHORT_ANSWER
+                q_type = QuestionType.FILL_BLANK
         elif len(options) < 2:
             status = "failed"
             reason = "INVALID_OPTION_FORMAT"
@@ -364,3 +364,38 @@ async def process_uploaded_document(
         result.questions.append(item)
 
     return result
+
+
+def parse_text_content(text: str) -> list[dict[str, Any]]:
+    """Legacy helper function for parsing text content into question dicts."""
+    items = parse_text_to_questions(text)
+    for it in items:
+        if "text" in it and "title" not in it:
+            it["title"] = it["text"]
+        if "correct_answers" in it and "answer" not in it and it["correct_answers"]:
+            it["answer"] = it["correct_answers"][0]
+    return items
+
+
+def parse_document(file_bytes: bytes, filename: str) -> list[dict[str, Any]]:
+    """Legacy helper function for parsing document bytes."""
+    ext = filename.lower().split('.')[-1]
+    if ext in ['xlsx', 'xls']:
+        items = parse_excel_questions(file_bytes)
+    elif ext == 'pdf':
+        text, _ = extract_pdf_text(file_bytes)
+        items = parse_text_to_questions(text)
+    elif ext in ['docx', 'doc']:
+        text = extract_docx_text(file_bytes)
+        items = parse_text_to_questions(text)
+    else:
+        text = extract_txt_text(file_bytes)
+        items = parse_text_to_questions(text)
+
+    for it in items:
+        if "text" in it and "title" not in it:
+            it["title"] = it["text"]
+        if "correct_answers" in it and "answer" not in it and it["correct_answers"]:
+            it["answer"] = it["correct_answers"][0]
+    return items
+

@@ -74,6 +74,7 @@ class QuestionService:
         questions_data: list[dict[str, Any]],
         subject_id: str | None = None,
         folder_id: str | None = None,
+        auto_approve: bool = False,
     ) -> list[Question]:
         """Insert confirmed questions, options, and initial QuestionVersion snapshots."""
         uploaded_file = await self.get_file(file_id)
@@ -104,6 +105,7 @@ class QuestionService:
             explanation = q_dict.get("explanation")
             topic_str = q_dict.get("topic") or q_dict.get("topic_name")
             target_subject_id = q_dict.get("subject_id") or q_dict.get("subjectId") or subject_id
+            is_verified = bool(q_dict.get("is_verified", auto_approve))
 
             question = Question(
                 type=q_type,
@@ -119,7 +121,7 @@ class QuestionService:
                 folder_id=folder_id,
                 source_file_id=uploaded_file.id,
                 created_by=actor.id,
-                is_verified=True,
+                is_verified=is_verified,
                 version=1,
             )
             self.db.add(question)
@@ -203,3 +205,19 @@ class QuestionService:
         self.db.add(qv)
         await self.db.flush()
         return qv
+
+    async def approve_questions(self, question_ids: list[str], actor: User) -> int:
+        """Mark list of questions as APPROVED (is_verified = True)."""
+        result = await self.db.execute(
+            select(Question).where(Question.id.in_(question_ids), Question.deleted_at.is_(None))
+        )
+        questions = result.scalars().all()
+        approved_count = 0
+        for q in questions:
+            if not q.is_verified:
+                q.is_verified = True
+                approved_count += 1
+                await self.create_question_version(q, actor, change_summary="Approved question for examinations")
+        await self.db.flush()
+        return approved_count
+

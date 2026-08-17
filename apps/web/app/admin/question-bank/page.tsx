@@ -207,14 +207,18 @@ export default function QuestionBankPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [diffFilter, setDiffFilter] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const [viewQuestion, setViewQuestion] = useState<QuestionRow | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const params: Record<string, unknown> = { page, page_size: 20 };
   if (search) params.search = search;
   if (typeFilter && typeFilter !== 'all') params.question_type = typeFilter;
   if (diffFilter && diffFilter !== 'all') params.difficulty = diffFilter;
   if (subjectFilter && subjectFilter !== 'all') params.subject_id = subjectFilter;
+  if (statusFilter === 'approved') params.is_verified = true;
+  if (statusFilter === 'draft') params.is_verified = false;
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['questions', params],
@@ -235,6 +239,25 @@ export default function QuestionBankPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/questions/${id}/approve`),
+    onSuccess: () => {
+      toast.success('Question approved!');
+      queryClient.invalidateQueries({ queryKey: ['questions'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Approval failed'),
+  });
+
+  const bulkApproveMutation = useMutation({
+    mutationFn: (ids: string[]) => api.post(`/questions/approve-bulk`, { question_ids: ids }),
+    onSuccess: (res: any, variables: string[]) => {
+      toast.success(`Approved ${res.approved_count ?? variables.length} question(s)!`);
+      setSelectedIds([]);
+      queryClient.invalidateQueries({ queryKey: ['questions'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Bulk approval failed'),
+  });
+
   return (
     <div className="space-y-6">
       <PageHeader title="Question Bank Directory" description="Search, filter, edit, view question history, and manage exam repository questions.">
@@ -251,6 +274,14 @@ export default function QuestionBankPage() {
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           />
         </div>
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
+          <SelectTrigger className="w-[140px] glass-input"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectContent className="glass-modal">
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="approved">APPROVED</SelectItem>
+            <SelectItem value="draft">DRAFT</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={typeFilter} onValueChange={(v) => { setTypeFilter(v); setPage(1); }}>
           <SelectTrigger className="w-[160px] glass-input"><SelectValue placeholder="All Question Types" /></SelectTrigger>
           <SelectContent className="glass-modal">
@@ -306,6 +337,7 @@ export default function QuestionBankPage() {
                     <TableHead>Type</TableHead>
                     <TableHead>Difficulty</TableHead>
                     <TableHead>Marks</TableHead>
+                    <TableHead>Status</TableHead>
                     <TableHead>Version</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -324,6 +356,17 @@ export default function QuestionBankPage() {
                       </TableCell>
                       <TableCell className="font-semibold text-xs">{q.marks}</TableCell>
                       <TableCell>
+                        {q.isVerified ? (
+                          <Badge variant="default" className="bg-emerald-600 text-white uppercase text-[10px]">
+                            APPROVED
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary" className="bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 uppercase text-[10px]">
+                            DRAFT
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <Badge variant="outline" className="font-mono text-[10px]">v{q.version || 1}</Badge>
                       </TableCell>
                       <TableCell className="text-right">
@@ -335,6 +378,14 @@ export default function QuestionBankPage() {
                             <DropdownMenuItem onClick={() => setViewQuestion(q)}>
                               <Eye className="h-4 w-4 mr-2" /> View & History
                             </DropdownMenuItem>
+                            {!q.isVerified && (
+                              <DropdownMenuItem
+                                className="text-emerald-600 font-bold"
+                                onClick={() => approveMutation.mutate(q.id)}
+                              >
+                                <CheckCircle2 className="h-4 w-4 mr-2" /> Approve Question
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem
                               className="text-destructive"
                               onClick={() => {

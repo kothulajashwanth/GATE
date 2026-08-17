@@ -147,6 +147,7 @@ async def list_questions(
     difficulty: str | None = None,
     subject_id: str | None = None,
     topic: str | None = None,
+    is_verified: bool | None = None,
 ) -> PaginatedResponse[QuestionOut]:
     logger.info(f"[QUESTIONS] REQUEST RECEIVED: page={page}, page_size={page_size}")
     logger.info(f"[QUESTIONS] AUTHENTICATION PASSED: user_id={actor.id}, email={actor.email}, role={actor.role}")
@@ -162,6 +163,8 @@ async def list_questions(
         base = base.where(Question.subject_id == subject_id)
     if topic:
         base = base.where(Question.topic.ilike(f"%{topic}%"))
+    if is_verified is not None:
+        base = base.where(Question.is_verified == is_verified)
 
     total = int((await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one())
     result = await db.execute(base.limit(page_size).offset((page - 1) * page_size))
@@ -324,3 +327,51 @@ async def delete_question(
         old_value={"text": q.text[:200]},
     )
     await db.commit()
+
+
+class BulkApproveRequest(BaseModel):
+    question_ids: list[str]
+
+
+@router.post("/approve-bulk", summary="Approve multiple questions")
+async def bulk_approve_questions(
+    body: BulkApproveRequest,
+    request: Request,
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    service = QuestionService(db)
+    approved_count = await service.approve_questions(body.question_ids, actor)
+    await AuditService.log(
+        db,
+        actor=actor,
+        request=request,
+        action="QUESTIONS_BULK_APPROVED",
+        entity_type="question",
+        entity_id="bulk",
+        new_value={"approved_count": approved_count},
+    )
+    await db.commit()
+    return {"status": "SUCCESS", "approved_count": approved_count}
+
+
+@router.post("/{question_id}/approve", response_model=QuestionOut, summary="Approve a single question")
+async def approve_question(
+    question_id: str,
+    request: Request,
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> QuestionOut:
+    service = QuestionService(db)
+    await service.approve_questions([question_id], actor)
+    await AuditService.log(
+        db,
+        actor=actor,
+        request=request,
+        action="QUESTION_APPROVED",
+        entity_type="question",
+        entity_id=question_id,
+        new_value={"is_verified": True},
+    )
+    await db.commit()
+    return _question_out(await _get_question_or_404(db, question_id))

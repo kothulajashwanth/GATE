@@ -173,11 +173,26 @@ class QuestionResult:
         negative = 0.0
 
         if question.type in (QT.MCQ, QT.TRUE_FALSE, QT.MULTI_SELECT):
-            if set(answer.answer) == set(question.correct_answers):
+            ans_set = set(str(a).strip().lower() for a in answer.answer)
+            corr_set = set(str(c).strip().lower() for c in question.correct_answers)
+
+            opts = getattr(question, "options", None)
+            if opts and isinstance(opts, list):
+                for idx, opt_text in enumerate(opts):
+                    letter = chr(65 + idx).lower()
+                    opt_str = str(opt_text).strip().lower()
+                    if letter in corr_set or str(idx) in corr_set:
+                        corr_set.add(opt_str)
+                        corr_set.add(letter)
+                    if letter in ans_set or str(idx) in ans_set or opt_str in ans_set:
+                        ans_set.add(opt_str)
+                        ans_set.add(letter)
+
+            if ans_set.intersection(corr_set) and (ans_set == corr_set or len(ans_set.intersection(corr_set)) >= len(corr_set)):
                 is_correct = True
-                marks_awarded = question.marks
+                marks_awarded = float(question.marks)
             else:
-                negative = question.negative_marks
+                negative = float(question.negative_marks or 0.0)
 
         elif question.type == QT.FILL_BLANK:
             user_ans = str(answer.answer[0]).strip().lower()
