@@ -191,8 +191,13 @@ export default function ExamPage() {
     };
 
     const handleBlur = () => {
-      setSecurityViolations((prev) => [...prev, 'Window lost focus']);
-      recordViolation('FOCUS_LOST', 'Window lost focus');
+      // On mobile/touch devices, blur triggers when touch inputs or soft keyboards open.
+      // Only record focus loss if document is also hidden or non-touch desktop device.
+      const isMobileTouch = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+      if (document.hidden || !isMobileTouch) {
+        setSecurityViolations((prev) => [...prev, 'Window lost focus']);
+        recordViolation('FOCUS_LOST', 'Window lost focus');
+      }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -267,47 +272,47 @@ export default function ExamPage() {
   return (
     <div className="min-h-screen bg-background bg-ambient-light flex flex-col selection:bg-none">
       {/* Top Restrained Glass Header */}
-      <header className="sticky top-0 z-40 glass-navbar px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <ShieldCheck className="h-6 w-6 text-primary" />
+      <header className="sticky top-0 z-40 glass-navbar px-3 sm:px-6 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6 text-primary shrink-0" />
           <div>
-            <h1 className="text-sm font-bold text-foreground">{session.examTitle}</h1>
-            <p className="text-[10px] text-muted-foreground font-mono">Secure Anti-Cheat Proctoring Enabled</p>
+            <h1 className="text-xs sm:text-sm font-bold text-foreground line-clamp-1">{session.examTitle}</h1>
+            <p className="text-[9px] sm:text-[10px] text-muted-foreground font-mono">Secure Proctoring Enabled</p>
           </div>
         </div>
 
-        {/* Live Timer */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-mono font-bold text-sm">
-            <Clock className="h-4 w-4" />
+        {/* Live Timer & Warnings */}
+        <div className="flex items-center gap-2 sm:gap-4 ml-auto">
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-mono font-bold text-xs sm:text-sm">
+            <Clock className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
             {formatDuration(timeRemaining)}
           </div>
           {session.maxWarnings > 0 && (
-            <Badge variant={warnings > 0 ? 'destructive' : 'outline'} className="text-xs">
-              Warnings: {warnings} / {session.maxWarnings}
+            <Badge variant={warnings > 0 ? 'destructive' : 'outline'} className="text-[10px] sm:text-xs py-0.5 px-2">
+              Warnings: {warnings}/{session.maxWarnings}
             </Badge>
           )}
         </div>
       </header>
 
       {/* Main Restrained Exam Area */}
-      <main className="flex-1 p-6 max-w-4xl mx-auto w-full space-y-6">
+      <main className="flex-1 p-3 sm:p-6 max-w-4xl mx-auto w-full space-y-4 sm:space-y-6 pb-28">
         <Tabs defaultValue="question" className="w-full">
           <TabsList className="grid w-full grid-cols-2 glass-surface p-1">
-            <TabsTrigger value="question">Question {currentIndex + 1}</TabsTrigger>
-            <TabsTrigger value="palette">Question Palette ({answeredCount}/{session.questions.length})</TabsTrigger>
+            <TabsTrigger value="question" className="text-xs sm:text-sm">Question {currentIndex + 1}</TabsTrigger>
+            <TabsTrigger value="palette" className="text-xs sm:text-sm">Palette ({answeredCount}/{session.questions.length})</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="question" className="mt-4 space-y-4">
-            <Card className="glass-card p-2">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-bold flex items-center gap-2">
-                  <Badge variant="outline" className="uppercase">{currentQuestion?.type?.replace('_', ' ')}</Badge>
-                  <Badge variant="secondary">{currentQuestion?.marks} Marks</Badge>
+          <TabsContent value="question" className="mt-3 sm:mt-4 space-y-4">
+            <Card className="glass-card p-1 sm:p-2">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 p-3 sm:p-6">
+                <CardTitle className="text-xs sm:text-sm font-bold flex items-center gap-2">
+                  <Badge variant="outline" className="uppercase text-[10px] sm:text-xs">{currentQuestion?.type?.replace('_', ' ')}</Badge>
+                  <Badge variant="secondary" className="text-[10px] sm:text-xs">{currentQuestion?.marks} Marks</Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4 text-xs">
-                <p className="text-base font-semibold text-foreground leading-relaxed">{currentQuestion?.text}</p>
+              <CardContent className="space-y-4 text-xs sm:text-xs p-3 sm:p-6 pt-0 sm:pt-0">
+                <p className="text-sm sm:text-base font-semibold text-foreground leading-relaxed">{currentQuestion?.text}</p>
 
                 {currentQuestion?.options && currentQuestion.options.length > 0 && (
                   <div className="space-y-2 pt-2">
@@ -319,7 +324,7 @@ export default function ExamPage() {
                           key={oIdx}
                           onClick={() => handleAnswerChange([opt])}
                           className={cn(
-                            'flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all',
+                            'flex items-center gap-3 p-3 sm:p-3.5 rounded-xl border cursor-pointer transition-all min-h-[44px]',
                             isSelected
                               ? 'bg-primary/15 border-primary text-foreground font-semibold shadow-sm'
                               : 'bg-muted/30 border-border/50 hover:bg-muted/60 text-foreground'
@@ -330,10 +335,10 @@ export default function ExamPage() {
                             name={`q-${currentQuestion.id}`}
                             checked={isSelected}
                             onChange={() => {}}
-                            className="h-4 w-4 text-primary"
+                            className="h-4 w-4 text-primary shrink-0"
                           />
-                          <span className="font-bold w-4">{letter}.</span>
-                          <span className="text-xs">{opt}</span>
+                          <span className="font-bold w-4 shrink-0">{letter}.</span>
+                          <span className="text-xs sm:text-sm leading-snug">{opt}</span>
                         </label>
                       );
                     })}
@@ -348,31 +353,31 @@ export default function ExamPage() {
                 variant="outline"
                 onClick={() => navigate(-1)}
                 disabled={currentIndex === 0}
-                className="glass-button"
+                className="glass-button text-xs sm:text-sm min-h-[40px]"
               >
-                <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                <ChevronLeft className="h-4 w-4 mr-1 shrink-0" /> Previous
               </Button>
               <span className="text-xs text-muted-foreground font-mono">
-                {currentIndex + 1} of {session.questions.length}
+                {currentIndex + 1} / {session.questions.length}
               </span>
               <Button
                 variant="outline"
                 onClick={() => navigate(1)}
                 disabled={currentIndex === session.questions.length - 1}
-                className="glass-button"
+                className="glass-button text-xs sm:text-sm min-h-[40px]"
               >
-                Next <ChevronRight className="h-4 w-4 ml-1" />
+                Next <ChevronRight className="h-4 w-4 ml-1 shrink-0" />
               </Button>
             </div>
           </TabsContent>
 
-          <TabsContent value="palette" className="mt-4">
+          <TabsContent value="palette" className="mt-3 sm:mt-4">
             <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="text-sm font-bold">Question Palette Matrix</CardTitle>
+              <CardHeader className="p-4 sm:p-6">
+                <CardTitle className="text-xs sm:text-sm font-bold">Question Palette Matrix</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-6 sm:grid-cols-10 gap-2">
+              <CardContent className="p-4 sm:p-6 pt-0 sm:pt-0 space-y-4">
+                <div className="grid grid-cols-5 xs:grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2">
                   {session.questions.map((q, idx) => {
                     const isAns = (answers[q.id]?.length ?? 0) > 0;
                     return (
@@ -380,7 +385,7 @@ export default function ExamPage() {
                         key={q.id}
                         variant={idx === currentIndex ? 'default' : isAns ? 'secondary' : 'outline'}
                         className={cn(
-                          'h-9 aspect-square font-mono text-xs',
+                          'h-9 w-full font-mono text-xs p-0',
                           idx === currentIndex ? 'bg-primary text-white font-bold' :
                           isAns ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 font-bold' : ''
                         )}
@@ -398,11 +403,11 @@ export default function ExamPage() {
       </main>
 
       {/* Floating Submit Button */}
-      <div className="fixed bottom-6 right-6 z-40">
+      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40">
         <Button
           size="lg"
           onClick={() => setShowSubmitConfirm(true)}
-          className="glass-button bg-primary text-white shadow-lg"
+          className="glass-button bg-primary text-white shadow-lg text-xs sm:text-sm h-11 sm:h-12 px-4 sm:px-6"
         >
           <Send className="h-4 w-4 mr-2" /> Submit Examination
         </Button>

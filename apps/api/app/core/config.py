@@ -12,6 +12,17 @@ def _resolve_env_placeholders(val: str) -> str:
     if not val:
         return val
 
+    # In production, if DATABASE_URL was not set or evaluates to localhost, fall back to Render's environment variables
+    if ("localhost" in val or "127.0.0.1" in val) and os.getenv("ENVIRONMENT") == "production":
+        alt_url = (
+            os.getenv("INTERNAL_DATABASE_URL")
+            or os.getenv("POSTGRES_URL")
+            or os.getenv("DATABASE_PUBLIC_URL")
+            or os.getenv("SUPABASE_DATABASE_URL")
+        )
+        if alt_url:
+            val = alt_url
+
     # 1. Expand environment variables using standard OS env lookup
     expanded = os.path.expandvars(val)
 
