@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuth } from '@clerk/nextjs';
 import { ApiError, createClient } from '@/lib/api/client';
@@ -27,7 +27,7 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 
   const { getToken } = useAuth();
-  const [client] = useState(() => createClient({ getToken }));
+  const client = useMemo(() => createClient({ getToken: () => getToken() }), [getToken]);
 
   return (
     <QueryClientProvider client={queryClient}>

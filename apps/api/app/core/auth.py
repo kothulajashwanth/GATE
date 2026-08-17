@@ -190,42 +190,79 @@ def require_roles(*roles: Role):
     return checker
 
 
+async def _fetch_clerk_user_details(clerk_id: str) -> dict | None:
+    settings = get_settings()
+    secret_key = settings.clerk_secret_key
+    if not secret_key or not clerk_id or not clerk_id.startswith("user_"):
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(
+                f"https://api.clerk.com/v1/users/{clerk_id}",
+                headers={"Authorization": f"Bearer {secret_key}"},
+            )
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception as exc:
+        logger.warning(f"Failed to fetch Clerk user details for {clerk_id}: {exc}")
+
+    return None
+
+
 async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None) -> User | None:
     from app.repositories.user import UserRepository
     from app.db.models.user import Role, User
 
     repo = UserRepository(db)
     user = await repo.get_by_clerk_id(clerk_id)
-    if user is None:
-        email = None
-        if claims:
-            email = claims.get("email") or claims.get("email_address")
-            if not email and "email_addresses" in claims:
-                addrs = claims["email_addresses"]
-                if isinstance(addrs, list) and len(addrs) > 0:
-                    first = addrs[0]
-                    if isinstance(first, dict):
-                        email = first.get("email_address") or first.get("email")
-                    elif isinstance(first, str):
-                        email = first
-        if not email or not isinstance(email, str):
-            email = f"{clerk_id}@gateignite.local"
 
-        existing_by_email = await repo.get_by_email(email)
+    clerk_data = None
+    if clerk_id and clerk_id.startswith("user_"):
+        clerk_data = await _fetch_clerk_user_details(clerk_id)
+
+    email = None
+    if clerk_data:
+        addrs = clerk_data.get("email_addresses", [])
+        if addrs and len(addrs) > 0:
+            email = addrs[0].get("email_address")
+    if not email and claims:
+        email = claims.get("email") or claims.get("email_address")
+        if not email and "email_addresses" in claims:
+            addrs = claims["email_addresses"]
+            if isinstance(addrs, list) and len(addrs) > 0:
+                first = addrs[0]
+                if isinstance(first, dict):
+                    email = first.get("email_address") or first.get("email")
+                elif isinstance(first, str):
+                    email = first
+
+    if not email or not isinstance(email, str):
+        email = f"{clerk_id}@gateignite.local"
+
+    clerk_claims = dict(claims or {})
+    if clerk_data:
+        clerk_claims["public_metadata"] = clerk_data.get("public_metadata", {})
+        clerk_claims["unsafe_metadata"] = clerk_data.get("unsafe_metadata", {})
+
+    is_admin = _is_admin_identity(email, clerk_claims)
+
+    if user is None:
+        existing_by_email = await repo.get_by_email(email) if not email.endswith("@gateignite.local") else None
         if existing_by_email:
             existing_by_email.clerk_id = clerk_id
-            if existing_by_email.role == Role.STUDENT and _is_admin_identity(email, claims):
+            if existing_by_email.role == Role.STUDENT and is_admin:
                 existing_by_email.role = Role.ADMIN
             await db.commit()
             await db.refresh(existing_by_email)
             return existing_by_email
 
-        user_role = Role.ADMIN if _is_admin_identity(email, claims) else Role.STUDENT
+        user_role = Role.ADMIN if is_admin else Role.STUDENT
 
-        first_name = claims.get("given_name") if claims else None
+        first_name = (clerk_data.get("first_name") if clerk_data else None) or (claims.get("given_name") if claims else None)
         if not first_name:
             first_name = email.split("@")[0].capitalize()
-        last_name = claims.get("family_name") or "Account" if claims else "Account"
+        last_name = (clerk_data.get("last_name") if clerk_data else None) or (claims.get("family_name") if claims else "Account") or "Account"
 
         user = User(
             clerk_id=clerk_id,
@@ -250,11 +287,20 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
         await db.commit()
         await db.refresh(user)
     else:
-        # Sync role if user is currently STUDENT but claims/email qualify for ADMIN
-        if user.role == Role.STUDENT and _is_admin_identity(user.email, claims):
+        # Sync user profile & role if user is currently STUDENT but is_admin qualifies
+        if user.email.endswith("@gateignite.local") and not email.endswith("@gateignite.local"):
+            user.email = email
+        if clerk_data:
+            if clerk_data.get("first_name"):
+                user.first_name = clerk_data["first_name"]
+            if clerk_data.get("last_name"):
+                user.last_name = clerk_data["last_name"]
+
+        if user.role == Role.STUDENT and is_admin:
             user.role = Role.ADMIN
-            await db.commit()
-            await db.refresh(user)
+
+        await db.commit()
+        await db.refresh(user)
 
     if user and user.role == Role.STUDENT:
         from app.db.models.student import Student
