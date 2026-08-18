@@ -73,6 +73,21 @@ def _generate_qr_token(secret: str, session_id: str, slot: int) -> str:
     return hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()[:16]
 
 
+async def _get_session_with_relations(db: AsyncSession, session_id: str) -> AttendanceSession | None:
+    res = await db.execute(
+        select(AttendanceSession)
+        .options(
+            selectinload(AttendanceSession.subject),
+            selectinload(AttendanceSession.department),
+            selectinload(AttendanceSession.semester),
+            selectinload(AttendanceSession.section),
+            selectinload(AttendanceSession.records),
+        )
+        .where(AttendanceSession.id == session_id, AttendanceSession.deleted_at.is_(None))
+    )
+    return res.scalar_one_or_none()
+
+
 def _format_session(s: AttendanceSession) -> dict:
     end_time_dt = None
     if s.start_time:
@@ -88,10 +103,10 @@ def _format_session(s: AttendanceSession) -> dict:
     return {
         "id": str(s.id),
         "title": s.title,
-        "subject": {"id": str(s.subject.id), "name": s.subject.name, "code": s.subject.code} if s.subject else None,
-        "department": {"id": str(s.department.id), "name": s.department.name} if s.department else None,
-        "semester": {"id": str(s.semester.id), "name": s.semester.name} if s.semester else None,
-        "section": {"id": str(s.section.id), "name": s.section.name} if s.section else None,
+        "subject": {"id": str(s.subject.id), "name": s.subject.name, "code": s.subject.code} if getattr(s, "subject", None) else None,
+        "department": {"id": str(s.department.id), "name": s.department.name} if getattr(s, "department", None) else None,
+        "semester": {"id": str(s.semester.id), "name": s.semester.name} if getattr(s, "semester", None) else None,
+        "section": {"id": str(s.section.id), "name": s.section.name} if getattr(s, "section", None) else None,
         "sessionDate": s.session_date.isoformat() if s.session_date else "",
         "startTime": s.start_time.isoformat() if s.start_time else "",
         "endTime": end_time_dt.isoformat() if end_time_dt else "",
@@ -100,7 +115,7 @@ def _format_session(s: AttendanceSession) -> dict:
         "presentCount": present_cnt,
         "absentCount": absent_cnt,
         "percentage": pct,
-        "createdAt": s.created_at.isoformat() if s.created_at else "",
+        "createdAt": s.created_at.isoformat() if getattr(s, "created_at", None) else "",
     }
 
 
@@ -152,11 +167,12 @@ async def create_session(
         action="ATTENDANCE_SESSION_CREATED",
         entity_type="attendance_session",
         entity_id=str(session.id),
-        new_value={"title": session.title, "status": "DRAFT"},
+        new_value={"title": session.title, "status": initial_status.value},
     )
     await db.commit()
-    await db.refresh(session)
-    return _format_session(session)
+
+    full_session = await _get_session_with_relations(db, str(session.id))
+    return _format_session(full_session or session)
 
 
 @router.get("/sessions", summary="List attendance sessions")
@@ -206,21 +222,10 @@ async def get_session_detail(
     _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN, Role.STUDENT))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    res = await db.execute(
-        select(AttendanceSession)
-        .options(
-            selectinload(AttendanceSession.subject),
-            selectinload(AttendanceSession.department),
-            selectinload(AttendanceSession.semester),
-            selectinload(AttendanceSession.section),
-        )
-        .where(AttendanceSession.id == session_id, AttendanceSession.deleted_at.is_(None))
-    )
-    s = res.scalar_one_or_none()
+    s = await _get_session_with_relations(db, session_id)
     if not s:
         raise NotFoundError("Attendance session not found")
 
-    # Counts
     rec_res = await db.execute(
         select(AttendanceRecord.status, func.count(AttendanceRecord.id))
         .where(AttendanceRecord.session_id == session_id, AttendanceRecord.deleted_at.is_(None))
@@ -242,6 +247,7 @@ async def get_session_detail(
 
 
 @router.post("/sessions/{session_id}/activate", summary="Activate attendance session")
+@router.post("/sessions/{session_id}/start", summary="Start attendance session")
 async def activate_session(
     session_id: str,
     request: Request,
@@ -264,11 +270,12 @@ async def activate_session(
         new_value={"status": "ACTIVE"},
     )
     await db.commit()
-    await db.refresh(s)
-    return _format_session(s)
+    full_session = await _get_session_with_relations(db, session_id)
+    return _format_session(full_session or s)
 
 
 @router.post("/sessions/{session_id}/close", summary="Close attendance session and auto-mark ABSENT")
+@router.post("/sessions/{session_id}/end", summary="End attendance session and auto-mark ABSENT")
 async def close_session(
     session_id: str,
     request: Request,
@@ -328,6 +335,7 @@ async def close_session(
 
 
 @router.get("/qr/{session_id}", summary="Get dynamic QR token for active session")
+@router.get("/sessions/{session_id}/qr", summary="Get dynamic QR token for active session")
 async def get_dynamic_qr(
     session_id: str,
     _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],

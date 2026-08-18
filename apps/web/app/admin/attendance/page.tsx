@@ -137,6 +137,12 @@ export default function AdminAttendancePage() {
       toast.success('Attendance session created!');
       setIsCreateOpen(false);
       setTitle('');
+      setSubjectId('');
+      setDepartmentId('');
+      setSemesterId('');
+      setSectionId('');
+      refetchSessions();
+      refetchSummary();
       queryClient.invalidateQueries({ queryKey: ['attendance-summary'] });
       queryClient.invalidateQueries({ queryKey: ['attendance-sessions-list'] });
     },
@@ -548,7 +554,7 @@ export default function AdminAttendancePage() {
             <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
             <Button
               type="button"
-              className="glass-button bg-primary text-white"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md border border-primary/30 cursor-pointer text-xs font-semibold"
               disabled={createMutation.isPending}
               onClick={() => {
                 let duration = 60;
