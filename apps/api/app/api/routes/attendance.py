@@ -435,6 +435,7 @@ async def list_records(
     base = (
         select(AttendanceRecord)
         .join(Student, AttendanceRecord.student_id == Student.id)
+        .outerjoin(User, Student.user_id == User.id)
         .join(AttendanceSession, AttendanceRecord.session_id == AttendanceSession.id)
         .options(
             selectinload(AttendanceRecord.student).selectinload(Student.user),
@@ -645,7 +646,13 @@ async def attendance_analytics_summary(
     now_str = datetime.now(UTC).strftime("%Y-%m-%d")
     recent_sess_res = await db.execute(
         select(AttendanceSession)
-        .options(selectinload(AttendanceSession.subject))
+        .options(
+            selectinload(AttendanceSession.subject),
+            selectinload(AttendanceSession.department),
+            selectinload(AttendanceSession.semester),
+            selectinload(AttendanceSession.section),
+            selectinload(AttendanceSession.records),
+        )
         .where(AttendanceSession.deleted_at.is_(None))
         .order_by(AttendanceSession.created_at.desc())
         .limit(5)
