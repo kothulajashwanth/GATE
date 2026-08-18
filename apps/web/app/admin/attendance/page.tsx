@@ -75,6 +75,7 @@ export default function AdminAttendancePage() {
   const [sectionId, setSectionId] = useState('');
   const [sessionDate, setSessionDate] = useState(new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState(new Date().toISOString().substring(0, 16));
+  const [endTime, setEndTime] = useState(new Date(Date.now() + 3600000).toISOString().substring(0, 16));
   const [durationMinutes, setDurationMinutes] = useState(60);
 
   // Queries
