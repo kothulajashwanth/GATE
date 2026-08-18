@@ -31,12 +31,14 @@ class ExamEngine:
 
     async def start_session(self, student: Student, exam: Exam, *, ip: str | None, user_agent: str | None, fingerprint: str | None) -> ExamSession:
         now = datetime.now(UTC)
+        start_at = exam.start_at.replace(tzinfo=UTC) if (exam.start_at and exam.start_at.tzinfo is None) else exam.start_at
+        end_at = exam.end_at.replace(tzinfo=UTC) if (exam.end_at and exam.end_at.tzinfo is None) else exam.end_at
 
-        if exam.status not in (ExamStatus.PUBLISHED, ExamStatus.IN_PROGRESS):
+        if exam.status not in (ExamStatus.PUBLISHED, ExamStatus.IN_PROGRESS, ExamStatus.LIVE):
             raise ValidationError("Exam is not open", details={"code": "exam_not_open"})
-        if now < exam.start_at:
+        if start_at and now < start_at:
             raise ValidationError("Exam has not started yet", details={"code": "exam_not_started"})
-        if now > exam.end_at:
+        if end_at and now > end_at:
             raise ValidationError("Exam window has closed", details={"code": "exam_closed"})
 
         # one active session per student+exam

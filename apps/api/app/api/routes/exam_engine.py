@@ -150,10 +150,17 @@ async def preflight_check(
     student = await _student_or_404(db, user)
     exam = await _exam_or_404(db, exam_id)
     now = datetime.now(UTC)
+    start_at = exam.start_at.replace(tzinfo=UTC) if (exam.start_at and exam.start_at.tzinfo is None) else exam.start_at
+    end_at = exam.end_at.replace(tzinfo=UTC) if (exam.end_at and exam.end_at.tzinfo is None) else exam.end_at
 
     issues = []
-    exam_open = exam.status in (ExamStatus.PUBLISHED, ExamStatus.LIVE, ExamStatus.IN_PROGRESS) and (exam.start_at <= now <= exam.end_at)
-    if not exam_open:
+    is_status_active = exam.status in (ExamStatus.PUBLISHED, ExamStatus.LIVE, ExamStatus.IN_PROGRESS)
+    window_ok = (start_at is None or start_at <= now) and (end_at is None or now <= end_at)
+    exam_open = is_status_active and window_ok
+
+    if not is_status_active:
+        issues.append("Exam is not published")
+    elif not window_ok:
         issues.append("Exam is not currently in an active schedule window")
 
     if not student.is_active:
@@ -178,8 +185,8 @@ async def preflight_check(
     return PreflightResponse(
         isEligible=is_eligible,
         examOpen=exam_open,
-        startAt=exam.start_at.isoformat(),
-        endAt=exam.end_at.isoformat(),
+        startAt=start_at.isoformat() if start_at else "",
+        endAt=end_at.isoformat() if end_at else "",
         serverTime=now.isoformat(),
         attemptCount=finished_count,
         maxAttempts=exam.attempt_limit,

@@ -346,6 +346,15 @@ async def publish_exam(
     if eq_count == 0:
         raise BadRequestError("Cannot publish exam without questions")
 
+    now = datetime.now(UTC)
+    now_naive = now.replace(tzinfo=None)
+
+    if not exam.start_at or (exam.start_at.tzinfo is None and exam.start_at > now_naive) or (exam.start_at.tzinfo is not None and exam.start_at > now):
+        exam.start_at = now_naive
+    if not exam.end_at or (exam.end_at.tzinfo is None and exam.end_at <= now_naive) or (exam.end_at.tzinfo is not None and exam.end_at <= now):
+        from datetime import timedelta
+        exam.end_at = now_naive + timedelta(days=30)
+
     exam.status = ExamStatus.PUBLISHED
     await db.flush()
 

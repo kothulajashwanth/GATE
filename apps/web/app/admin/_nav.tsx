@@ -19,6 +19,7 @@ import { ROLE_ROUTES } from '@/lib/constants';
 export const ADMIN_NAV = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/students', label: 'Students', icon: Users },
+  { href: '/admin/attendance', label: 'Attendance', icon: Activity },
   { href: '/admin/exams', label: 'Examinations', icon: FileQuestion },
   { href: '/admin/exams/live', label: 'Live Monitoring', icon: Activity },
   { href: '/admin/exams/blueprint', label: 'Exam Blueprint', icon: Layers },
