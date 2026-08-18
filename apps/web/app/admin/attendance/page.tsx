@@ -263,52 +263,85 @@ export default function AdminAttendancePage() {
           <CardTitle className="text-sm font-bold flex items-center gap-2">
             <Clock className="h-4 w-4 text-primary" /> Attendance Sessions Overview
           </CardTitle>
-          <Button size="sm" variant="ghost" onClick={() => refetchSessions()} className="h-7 text-xs">
-            <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh Sessions
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={() => refetchSessions()} className="h-7 text-xs">
+              <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
+            </Button>
+            <Button size="sm" onClick={() => setIsCreateOpen(true)} className="h-7 text-xs glass-button bg-primary text-white font-semibold shadow-xs">
+              <Plus className="h-3.5 w-3.5 mr-1" /> Create Session
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3 text-xs pt-0">
           {!sessions.length ? (
-            <p className="text-muted-foreground text-center py-4">No attendance sessions created yet. Click "Create Session" to get started.</p>
+            <div className="p-6 text-center space-y-3 bg-muted/10 rounded-xl border border-dashed border-border/60">
+              <p className="text-muted-foreground text-xs font-medium">No attendance sessions created yet.</p>
+              <Button size="sm" onClick={() => setIsCreateOpen(true)} className="glass-button bg-primary text-white text-xs">
+                <Plus className="h-3.5 w-3.5 mr-1.5" /> Create First Session
+              </Button>
+            </div>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {sessions.map((s) => (
-                <div key={s.id} className="p-3 rounded-xl border border-border/40 bg-muted/20 space-y-2 flex flex-col justify-between">
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-foreground text-xs truncate max-w-[160px]">{s.title}</span>
-                      <Badge variant={s.status === 'ACTIVE' ? 'default' : s.status === 'CLOSED' ? 'secondary' : 'outline'} className="text-[10px]">
-                        {s.status}
-                      </Badge>
+              {sessions.map((s) => {
+                const sSubject = s.subject?.name || 'General Subject';
+                const sBatch = [s.department?.name, s.semester?.name, s.section?.name].filter(Boolean).join(' - ') || 'All Batches';
+                const startFmt = s.startTime ? new Date(s.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                const endFmt = s.endTime ? new Date(s.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                return (
+                  <div key={s.id} className="p-3.5 rounded-xl border border-border/40 bg-muted/20 space-y-2 flex flex-col justify-between shadow-xs">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-foreground text-xs truncate max-w-[170px]">{s.title}</span>
+                        <Badge variant={s.status === 'ACTIVE' ? 'default' : s.status === 'CLOSED' ? 'secondary' : 'outline'} className="text-[10px]">
+                          {s.status}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground font-medium">
+                        {sSubject} | <span className="text-foreground/80">{sBatch}</span>
+                      </p>
+                      {startFmt && (
+                        <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                          <Clock className="h-3 w-3 text-amber-500" /> {startFmt} {endFmt ? `– ${endFmt}` : ''}
+                        </p>
+                      )}
+                      <div className="grid grid-cols-3 gap-1 pt-1.5 text-[10px] text-center border-t border-border/20">
+                        <div className="bg-emerald-500/10 p-1 rounded font-bold text-emerald-600">
+                          Present: {s.presentCount ?? 0}
+                        </div>
+                        <div className="bg-rose-500/10 p-1 rounded font-bold text-rose-600">
+                          Absent: {s.absentCount ?? 0}
+                        </div>
+                        <div className="bg-amber-500/10 p-1 rounded font-bold text-amber-500">
+                          {s.percentage ?? 100}%
+                        </div>
+                      </div>
                     </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      {s.subject?.name || 'General'} | {s.department?.name || 'All Depts'}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 pt-2 border-t border-border/30">
-                    {s.status === 'DRAFT' && (
-                      <Button size="sm" variant="outline" className="h-7 text-xs w-full glass-button" onClick={() => activateMutation.mutate(s.id)}>
-                        <Play className="h-3 w-3 mr-1 text-emerald-600" /> Activate & Generate QR
-                      </Button>
-                    )}
-                    {s.status === 'ACTIVE' && (
-                      <>
-                        <Button size="sm" className="h-7 text-xs flex-1 glass-button bg-primary text-white" onClick={() => setActiveQrSession(s)}>
-                          <QrCode className="h-3 w-3 mr-1" /> View Live QR
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-border/30">
+                      {s.status === 'DRAFT' && (
+                        <Button size="sm" variant="outline" className="h-7 text-xs w-full glass-button" onClick={() => activateMutation.mutate(s.id)}>
+                          <Play className="h-3 w-3 mr-1 text-emerald-600" /> Activate & Display QR
                         </Button>
-                        <Button size="sm" variant="destructive" className="h-7 text-xs flex-1" onClick={() => closeMutation.mutate(s.id)}>
-                          <Lock className="h-3 w-3 mr-1" /> Close Session
-                        </Button>
-                      </>
-                    )}
-                    {s.status === 'CLOSED' && (
-                      <Badge variant="outline" className="w-full justify-center text-[10px] py-1 bg-muted/40">
-                        Session Closed (Auto-Absent Complete)
-                      </Badge>
-                    )}
+                      )}
+                      {s.status === 'ACTIVE' && (
+                        <>
+                          <Button size="sm" className="h-7 text-xs flex-1 glass-button bg-primary text-white" onClick={() => setActiveQrSession(s)}>
+                            <QrCode className="h-3 w-3 mr-1" /> Display QR
+                          </Button>
+                          <Button size="sm" variant="destructive" className="h-7 text-xs flex-1" onClick={() => closeMutation.mutate(s.id)}>
+                            <Lock className="h-3 w-3 mr-1" /> End Session
+                          </Button>
+                        </>
+                      )}
+                      {s.status === 'CLOSED' && (
+                        <Badge variant="outline" className="w-full justify-center text-[10px] py-1 bg-muted/40 text-muted-foreground font-semibold">
+                          Session Ended (Auto-Absent Complete)
+                        </Badge>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
@@ -456,12 +489,17 @@ export default function AdminAttendancePage() {
         <DialogContent className="glass-modal max-w-md">
           <DialogHeader>
             <DialogTitle>Create Attendance Session</DialogTitle>
-            <DialogDescription>Setup a new class or lecture session for attendance tracking.</DialogDescription>
+            <DialogDescription>Setup a new class or lecture session for live student QR attendance tracking.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-xs">
             <div className="space-y-1">
               <Label>Session Title *</Label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Operating Systems Lecture 12" className="glass-input" />
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Operating Systems Lecture 12"
+                className="glass-input"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -478,7 +516,7 @@ export default function AdminAttendancePage() {
               <div className="space-y-1">
                 <Label>Department</Label>
                 <Select value={departmentId} onValueChange={setDepartmentId}>
-                  <SelectTrigger className="glass-input text-xs"><SelectValue placeholder="Select Dept" /></SelectTrigger>
+                  <SelectTrigger className="glass-input text-xs"><SelectValue placeholder="All Depts" /></SelectTrigger>
                   <SelectContent className="glass-modal">
                     {departments.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
                   </SelectContent>
@@ -486,7 +524,7 @@ export default function AdminAttendancePage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label>Date *</Label>
                 <Input type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} className="glass-input text-xs" />
@@ -495,24 +533,38 @@ export default function AdminAttendancePage() {
                 <Label>Start Time *</Label>
                 <Input type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="glass-input text-xs" />
               </div>
+              <div className="space-y-1">
+                <Label>End Time *</Label>
+                <Input type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="glass-input text-xs" />
+              </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
             <Button
+              type="button"
               className="glass-button bg-primary text-white"
-              disabled={createMutation.isPending || !title.trim()}
-              onClick={() => createMutation.mutate({
-                title,
-                subjectId: subjectId || undefined,
-                departmentId: departmentId || undefined,
-                sessionDate,
-                startTime,
-                durationMinutes,
-              })}
+              disabled={createMutation.isPending}
+              onClick={() => {
+                let duration = 60;
+                if (startTime && endTime) {
+                  const diff = Math.max(15, Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000));
+                  if (!isNaN(diff) && diff > 0) duration = diff;
+                }
+                createMutation.mutate({
+                  title: title.trim() || 'Class Attendance Session',
+                  subjectId: subjectId || undefined,
+                  departmentId: departmentId || undefined,
+                  semesterId: semesterId || undefined,
+                  sectionId: sectionId || undefined,
+                  sessionDate,
+                  startTime,
+                  durationMinutes: duration,
+                });
+              }}
             >
               {createMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Save Draft Session
+              Create Session
             </Button>
           </DialogFooter>
         </DialogContent>

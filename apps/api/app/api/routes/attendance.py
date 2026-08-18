@@ -74,6 +74,17 @@ def _generate_qr_token(secret: str, session_id: str, slot: int) -> str:
 
 
 def _format_session(s: AttendanceSession) -> dict:
+    end_time_dt = None
+    if s.start_time:
+        from datetime import timedelta
+        end_time_dt = s.start_time + timedelta(minutes=s.duration_minutes)
+
+    rec_list = getattr(s, "records", []) or []
+    present_cnt = len([r for r in rec_list if getattr(r, "status", None) in (AttendanceStatus.PRESENT, "PRESENT", AttendanceStatus.LATE, "LATE")])
+    absent_cnt = len([r for r in rec_list if getattr(r, "status", None) in (AttendanceStatus.ABSENT, "ABSENT")])
+    total_cnt = present_cnt + absent_cnt
+    pct = round((present_cnt / total_cnt * 100), 1) if total_cnt > 0 else 100.0
+
     return {
         "id": str(s.id),
         "title": s.title,
@@ -83,8 +94,12 @@ def _format_session(s: AttendanceSession) -> dict:
         "section": {"id": str(s.section.id), "name": s.section.name} if s.section else None,
         "sessionDate": s.session_date.isoformat() if s.session_date else "",
         "startTime": s.start_time.isoformat() if s.start_time else "",
+        "endTime": end_time_dt.isoformat() if end_time_dt else "",
         "durationMinutes": s.duration_minutes,
         "status": s.status.value if hasattr(s.status, "value") else str(s.status),
+        "presentCount": present_cnt,
+        "absentCount": absent_cnt,
+        "percentage": pct,
         "createdAt": s.created_at.isoformat() if s.created_at else "",
     }
 
@@ -108,6 +123,12 @@ async def create_session(
     except ValueError:
         start_dt = session_dt
 
+    now_naive = datetime.now(UTC).replace(tzinfo=None)
+    start_dt_naive = start_dt.replace(tzinfo=None) if start_dt.tzinfo else start_dt
+
+    # If start time is current or in the past, activate immediately for QR scanning
+    initial_status = SessionState.ACTIVE if start_dt_naive <= now_naive else SessionState.DRAFT
+
     session = AttendanceSession(
         title=body.title,
         subject_id=body.subjectId or None,
@@ -118,7 +139,7 @@ async def create_session(
         session_date=session_dt,
         start_time=start_dt,
         duration_minutes=body.durationMinutes,
-        status=SessionState.DRAFT,
+        status=initial_status,
         qr_secret=secrets.token_hex(32),
     )
     db.add(session)
@@ -155,6 +176,7 @@ async def list_sessions(
             selectinload(AttendanceSession.department),
             selectinload(AttendanceSession.semester),
             selectinload(AttendanceSession.section),
+            selectinload(AttendanceSession.records),
         )
         .where(AttendanceSession.deleted_at.is_(None))
         .order_by(AttendanceSession.created_at.desc())
