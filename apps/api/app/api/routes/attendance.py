@@ -4,7 +4,7 @@ import hmac
 import io
 import secrets
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -750,7 +750,8 @@ async def export_attendance_csv(
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
-        "Date", "Batch", "Subject", "Student Name", "Roll Number", "Student ID", "Status", "Timestamp"
+        "Student Name", "Roll Number", "Batch", "Subject", "Date",
+        "Session Start", "Session End", "Status", "Check-in Time", "Attendance Percentage"
     ])
 
     dept_name = "ALL"
@@ -766,18 +767,23 @@ async def export_attendance_csv(
         if st and st.department:
             dept_name = st.department.name.replace(" ", "_")
 
-        s_date = sess.session_date.strftime("%d-%m-%Y") if (sess and sess.session_date) else ""
-        s_time = r.marked_at.strftime("%H:%M:%S") if r.marked_at else "-"
+        s_date = sess.session_date.strftime("%Y-%m-%d") if (sess and sess.session_date) else ""
+        s_start = sess.start_time.strftime("%H:%M") if (sess and sess.start_time) else ""
+        s_end = (sess.start_time + timedelta(minutes=sess.duration_minutes)).strftime("%H:%M") if (sess and sess.start_time and sess.duration_minutes) else ""
+        c_time = r.marked_at.strftime("%H:%M:%S") if r.marked_at else "-"
+        pct_str = "100%" if r.status in (AttendanceStatus.PRESENT, AttendanceStatus.LATE) else "0%"
 
         writer.writerow([
-            s_date,
-            clean_batch,
-            sess.subject.name if (sess and sess.subject) else (sess.title if sess else "N/A"),
             st.full_name if st else "",
             st.roll_number if st else "",
-            str(st.id) if st else "",
+            clean_batch,
+            sess.subject.name if (sess and sess.subject) else (sess.title if sess else "N/A"),
+            s_date,
+            s_start,
+            s_end,
             r.status.value if hasattr(r.status, "value") else str(r.status),
-            s_time,
+            c_time,
+            pct_str,
         ])
 
     output.seek(0)

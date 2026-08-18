@@ -45,27 +45,24 @@ export default function AdminDashboard() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ['admin', 'stats', isLoaded, isSignedIn],
     queryFn: async () => {
-      try {
-        const [students, exams, questions, sessions] = await Promise.all([
-          api.get<Paginated<unknown>>('/students', { page_size: 1, page: 1 }),
-          api.get<Paginated<unknown>>('/exams', { page_size: 1, page: 1 }),
-          api.get<Paginated<unknown>>('/questions', { page_size: 1, page: 1 }),
-          api.get<Paginated<unknown>>('/sessions', { page_size: 1, page: 1 }),
-        ]);
-        return {
-          totalStudents: students.total ?? 0,
-          totalExams: exams.total ?? 0,
-          totalQuestions: questions.total ?? 0,
-          activeSessions: sessions.total ?? 0,
-        };
-      } catch {
-        return {
-          totalStudents: 0,
-          totalExams: 0,
-          totalQuestions: 0,
-          activeSessions: 0,
-        };
-      }
+      const results = await Promise.allSettled([
+        api.get<Paginated<unknown>>('/students', { page_size: 1, page: 1 }),
+        api.get<Paginated<unknown>>('/exams', { page_size: 1, page: 1 }),
+        api.get<Paginated<unknown>>('/questions', { page_size: 1, page: 1 }),
+        api.get<Paginated<unknown>>('/attendance/sessions', { status_filter: 'ACTIVE', page_size: 1 }),
+      ]);
+
+      const students = results[0].status === 'fulfilled' ? results[0].value : null;
+      const exams = results[1].status === 'fulfilled' ? results[1].value : null;
+      const questions = results[2].status === 'fulfilled' ? results[2].value : null;
+      const sessions = results[3].status === 'fulfilled' ? results[3].value : null;
+
+      return {
+        totalStudents: students?.total ?? 0,
+        totalExams: exams?.total ?? 0,
+        totalQuestions: questions?.total ?? 0,
+        activeSessions: sessions?.total ?? 0,
+      };
     },
     enabled: isLoaded && isSignedIn,
   });
@@ -92,10 +89,10 @@ export default function AdminDashboard() {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard title="Enrolled Students" value={stats?.totalStudents ?? 0} icon={Users} change="+12% active" />
-          <StatCard title="Total Exams" value={stats?.totalExams ?? 0} icon={FileQuestion} change="Active Schedules" />
+          <StatCard title="Enrolled Students" value={stats?.totalStudents ?? 0} icon={Users} />
+          <StatCard title="Total Exams" value={stats?.totalExams ?? 0} icon={FileQuestion} />
           <StatCard title="Question Pool" value={stats?.totalQuestions ?? 0} icon={GraduationCap} />
-          <StatCard title="Live Proctored Sessions" value={stats?.activeSessions ?? 0} icon={TrendingUp} change="Monitored Live" />
+          <StatCard title="Live Proctored Sessions" value={stats?.activeSessions ?? 0} icon={TrendingUp} />
         </div>
       )}
 
