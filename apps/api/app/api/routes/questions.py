@@ -147,6 +147,7 @@ async def list_questions(
     difficulty: str | None = None,
     subject_id: str | None = None,
     topic: str | None = None,
+    source_file_id: str | None = None,
     is_verified: bool | None = None,
 ) -> PaginatedResponse[QuestionOut]:
     logger.info(f"[QUESTIONS] REQUEST RECEIVED: page={page}, page_size={page_size}")
@@ -163,6 +164,8 @@ async def list_questions(
         base = base.where(Question.subject_id == subject_id)
     if topic:
         base = base.where(Question.topic.ilike(f"%{topic}%"))
+    if source_file_id:
+        base = base.where(Question.source_file_id == source_file_id)
     if is_verified is not None:
         base = base.where(Question.is_verified == is_verified)
 

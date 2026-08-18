@@ -214,6 +214,62 @@ async def upload_question_file(
     return _file_out(uf)
 
 
+@router.get("/files/{file_id}", response_model=UploadedFileOut, summary="Get uploaded question file details")
+async def get_uploaded_file_detail(
+    file_id: str,
+    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UploadedFileOut:
+    service = QuestionService(db)
+    uf = await service.get_file(file_id)
+    return _file_out(uf)
+
+
+@router.get("/files/{file_id}/questions", summary="Get extracted questions for an uploaded file")
+async def get_file_questions(
+    file_id: str,
+    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    service = QuestionService(db)
+    uf = await service.get_file(file_id)
+    res_qs = await db.execute(select(Question).where(Question.source_file_id == uf.id, Question.deleted_at.is_(None)))
+    db_questions = res_qs.scalars().all()
+    
+    questions_data = [
+        {
+            "number": str(idx + 1),
+            "text": q.text,
+            "question_type": q.type.value if hasattr(q.type, "value") else str(q.type),
+            "options": q.options or [],
+            "correct_answers": q.correct_answers or [],
+            "marks": q.marks,
+            "negative_marks": q.negative_marks,
+            "difficulty": q.difficulty.value if hasattr(q.difficulty, "value") else str(q.difficulty),
+            "explanation": q.explanation,
+            "subject_code": str(q.subject_id) if q.subject_id else None,
+            "topic_name": q.topic,
+            "status": "valid",
+            "is_failed": False,
+            "is_duplicate": False,
+            "duplicate_of_id": None,
+        }
+        for idx, q in enumerate(db_questions)
+    ]
+
+    return {
+        "file_id": str(uf.id),
+        "status": uf.status,
+        "total": len(questions_data),
+        "valid_count": len(questions_data),
+        "review_count": 0,
+        "failed_count": 0,
+        "ocr_required": uf.ocr_used,
+        "questions": questions_data,
+        "failed_questions": [],
+    }
+
+
 @router.post("/files/{file_id}/process", summary="Process & parse uploaded file into questions with preview")
 async def process_file(
     file_id: str,
@@ -224,8 +280,43 @@ async def process_file(
     service = QuestionService(db)
     uf = await service.get_file(file_id)
 
+    # Fallback to database questions if file is missing on local disk (e.g. stateless restart or already imported)
     if not uf.storage_url or not os.path.exists(uf.storage_url):
-        raise NotFoundError("Stored file content not found")
+        res_qs = await db.execute(select(Question).where(Question.source_file_id == uf.id, Question.deleted_at.is_(None)))
+        db_questions = res_qs.scalars().all()
+        if db_questions:
+            questions_data = [
+                {
+                    "number": str(idx + 1),
+                    "text": q.text,
+                    "question_type": q.type.value if hasattr(q.type, "value") else str(q.type),
+                    "options": q.options or [],
+                    "correct_answers": q.correct_answers or [],
+                    "marks": q.marks,
+                    "negative_marks": q.negative_marks,
+                    "difficulty": q.difficulty.value if hasattr(q.difficulty, "value") else str(q.difficulty),
+                    "explanation": q.explanation,
+                    "subject_code": str(q.subject_id) if q.subject_id else None,
+                    "topic_name": q.topic,
+                    "status": "valid",
+                    "is_failed": False,
+                    "is_duplicate": False,
+                    "duplicate_of_id": None,
+                }
+                for idx, q in enumerate(db_questions)
+            ]
+            return {
+                "file_id": str(uf.id),
+                "status": uf.status,
+                "total": len(questions_data),
+                "valid_count": len(questions_data),
+                "review_count": 0,
+                "failed_count": 0,
+                "ocr_required": uf.ocr_used,
+                "questions": questions_data,
+                "failed_questions": [],
+            }
+        raise NotFoundError("Stored file content not found on server")
 
     with open(uf.storage_url, "rb") as f:
         file_bytes = f.read()
@@ -300,6 +391,7 @@ async def confirm_import(
         questions_data=body.questions,
         subject_id=body.subjectId,
         folder_id=body.folderId,
+        auto_approve=True,
     )
 
     await AuditService.log(

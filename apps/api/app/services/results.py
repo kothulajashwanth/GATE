@@ -52,7 +52,7 @@ class ResultCalculator:
             percentage=round(percentage, 2),
             is_passed=is_passed,
             evaluated_by="auto",
-            status=ResultStatus.AUTO,
+            status=ResultStatus.PUBLISHED,
             question_analysis=question_analysis,
         )
         self.db.add(result)

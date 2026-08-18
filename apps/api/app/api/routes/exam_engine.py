@@ -83,7 +83,13 @@ async def _student_or_404(db: AsyncSession, user: User) -> Student:
     result = await db.execute(select(Student).where(Student.user_id == user.id))
     student = result.scalar_one_or_none()
     if student is None:
-        raise NotFoundError("Student profile not found. Contact administration.")
+        student = Student(
+            user_id=user.id,
+            roll_number=f"STU-{str(user.id)[:8].upper()}",
+        )
+        db.add(student)
+        await db.commit()
+        await db.refresh(student)
     return student
 
 
@@ -138,7 +144,7 @@ def _to_view(session: ExamSession, exam: Exam, questions: list[Question], answer
 @router.get("/preflight/{exam_id}", response_model=PreflightResponse, summary="Perform Technical & Eligibility Preflight Check")
 async def preflight_check(
     exam_id: str,
-    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PreflightResponse:
     student = await _student_or_404(db, user)
@@ -187,7 +193,7 @@ async def preflight_check(
 async def start_exam(
     body: StartRequest,
     request: Request,
-    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SessionView:
     student = await _student_or_404(db, user)
@@ -214,7 +220,7 @@ async def start_exam(
 @router.get("/{session_id}", response_model=SessionView, summary="Resume existing session")
 async def get_session(
     session_id: str,
-    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SessionView:
     session = await _session_or_404(db, session_id)
@@ -231,7 +237,7 @@ async def get_session(
 async def save_answer(
     session_id: str,
     body: AnswerRequest,
-    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     session = await _session_or_404(db, session_id)
@@ -247,7 +253,7 @@ async def save_answer(
 async def heartbeat(
     session_id: str,
     body: HeartbeatRequest,
-    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     session = await _session_or_404(db, session_id)
@@ -268,7 +274,7 @@ async def heartbeat(
 async def record_violation(
     session_id: str,
     body: ViolationRequest,
-    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     session = await _session_or_404(db, session_id)
@@ -288,7 +294,7 @@ async def record_violation(
 @router.post("/{session_id}/submit", response_model=dict, summary="Submit the exam")
 async def submit(
     session_id: str,
-    user: Annotated[User, Depends(require_roles(Role.STUDENT))],
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     session = await _session_or_404(db, session_id)
