@@ -77,11 +77,6 @@ export function createClient(opts: ClientOptions = {}) {
     path: string,
     body?: unknown,
     signal?: AbortSignal,
-  async function request<T>(
-    method: string,
-    path: string,
-    body?: unknown,
-    signal?: AbortSignal,
   ): Promise<T> {
     const isFormData =
       body !== null &&
@@ -167,8 +162,6 @@ export function createClient(opts: ClientOptions = {}) {
       return request<T>('PUT', path, body, signal);
     },
     patch<T>(path: string, body?: unknown, signal?: AbortSignal) {
-      return request<T>('PATCH', path, body, signal);
-    },
       return request<T>('PATCH', path, body, signal);
     },
     delete<T>(path: string, signal?: AbortSignal) {
