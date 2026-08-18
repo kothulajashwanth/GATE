@@ -23,6 +23,7 @@ interface StudentAttendanceSummary {
     subjectName: string;
     total: number;
     present: number;
+    absent: number;
     percentage: number;
   }[];
   history: {
