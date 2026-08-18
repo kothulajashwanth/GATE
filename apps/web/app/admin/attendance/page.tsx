@@ -388,6 +388,7 @@ export default function AdminAttendancePage() {
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                 className="pl-8 h-8 glass-input text-xs"
               />
+            </div>
             <Input
               type="date"
               value={dateFilter}
