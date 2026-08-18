@@ -376,6 +376,14 @@ async def scan_qr_attendance(
     if s.status != SessionState.ACTIVE:
         raise BadRequestError("This attendance session is not active")
 
+    # Cohort / Batch Validation: Verify student belongs to session cohort
+    if s.department_id and student.department_id and str(s.department_id) != str(student.department_id):
+        raise ForbiddenError("You are not enrolled in the department assigned to this attendance session.")
+    if s.semester_id and student.semester_id and str(s.semester_id) != str(student.semester_id):
+        raise ForbiddenError("You are not enrolled in the semester assigned to this attendance session.")
+    if s.section_id and student.section_id and str(s.section_id) != str(student.section_id):
+        raise ForbiddenError("You are not enrolled in the section assigned to this attendance session.")
+
     # Validate HMAC token against current slot or previous slot (30-60s window)
     ts = int(time.time())
     current_slot = ts // 30
@@ -431,6 +439,7 @@ async def list_records(
     subject_id: str | None = None,
     department_id: str | None = None,
     status_filter: str | None = None,
+    date: str | None = None,
 ) -> PaginatedResponse[dict]:
     base = (
         select(AttendanceRecord)
@@ -440,6 +449,8 @@ async def list_records(
         .options(
             selectinload(AttendanceRecord.student).selectinload(Student.user),
             selectinload(AttendanceRecord.student).selectinload(Student.department),
+            selectinload(AttendanceRecord.student).selectinload(Student.semester),
+            selectinload(AttendanceRecord.student).selectinload(Student.section),
             selectinload(AttendanceRecord.session).selectinload(AttendanceSession.subject),
         )
         .where(AttendanceRecord.deleted_at.is_(None))
@@ -453,10 +464,16 @@ async def list_records(
             base = base.where(AttendanceRecord.status == AttendanceStatus(status_filter))
         except ValueError:
             pass
-    if subject_id:
+    if subject_id and subject_id != "all":
         base = base.where(AttendanceSession.subject_id == subject_id)
-    if department_id:
+    if department_id and department_id != "all":
         base = base.where(Student.department_id == department_id)
+    if date and date.strip():
+        try:
+            d_obj = datetime.fromisoformat(date.replace("Z", "+00:00")).date()
+            base = base.where(func.date(AttendanceSession.session_date) == d_obj)
+        except ValueError:
+            pass
     if search:
         base = base.where(
             (Student.roll_number.ilike(f"%{search}%")) |
@@ -472,13 +489,21 @@ async def list_records(
     for r in res.scalars().all():
         st = r.student
         sess = r.session
+        batch_name = [
+            st.department.name if (st and st.department) else None,
+            st.semester.name if (st and st.semester) else None,
+            st.section.name if (st and st.section) else None,
+        ]
+        clean_batch = " - ".join([b for b in batch_name if b]) or "General Cohort"
+
         items.append({
             "id": str(r.id),
-            "studentId": str(st.id),
-            "studentRoll": st.roll_number,
-            "studentName": st.full_name,
-            "departmentName": st.department.name if st.department else "N/A",
-            "subjectName": sess.subject.name if sess and sess.subject else (sess.title if sess else "N/A"),
+            "studentId": str(st.id) if st else "",
+            "studentRoll": st.roll_number if st else "",
+            "studentName": st.full_name if st else "",
+            "batch": clean_batch,
+            "departmentName": st.department.name if (st and st.department) else "N/A",
+            "subjectName": sess.subject.name if (sess and sess.subject) else (sess.title if sess else "N/A"),
             "sessionDate": sess.session_date.isoformat() if (sess and sess.session_date) else "",
             "status": r.status.value if hasattr(r.status, "value") else str(r.status),
             "verificationMethod": r.verification_method,
@@ -541,27 +566,30 @@ async def student_my_attendance(
     records = recs_res.scalars().all()
 
     total_sessions = len(records)
-    present_cnt = len([r for r in records if r.status == AttendanceStatus.PRESENT])
+    present_cnt = len([r for r in records if r.status in (AttendanceStatus.PRESENT, AttendanceStatus.LATE)])
     absent_cnt = len([r for r in records if r.status == AttendanceStatus.ABSENT])
     late_cnt = len([r for r in records if r.status == AttendanceStatus.LATE])
 
-    pct = round((present_cnt / total_sessions * 100), 1) if total_sessions > 0 else 100.0
+    pct = round((present_cnt / total_sessions * 100), 1) if total_sessions > 0 else 0.0
 
     # Subject breakdown
     subject_map: dict[str, dict] = {}
     for r in records:
         s_name = r.session.subject.name if (r.session and r.session.subject) else (r.session.title if r.session else "General")
         if s_name not in subject_map:
-            subject_map[s_name] = {"subjectName": s_name, "total": 0, "present": 0}
+            subject_map[s_name] = {"subjectName": s_name, "total": 0, "present": 0, "absent": 0}
         subject_map[s_name]["total"] += 1
         if r.status in (AttendanceStatus.PRESENT, AttendanceStatus.LATE):
             subject_map[s_name]["present"] += 1
+        else:
+            subject_map[s_name]["absent"] += 1
 
     subject_breakdown = [
         {
             "subjectName": v["subjectName"],
             "total": v["total"],
             "present": v["present"],
+            "absent": v["absent"],
             "percentage": round((v["present"] / v["total"] * 100), 1) if v["total"] > 0 else 0.0,
         }
         for v in subject_map.values()
@@ -595,15 +623,14 @@ async def attendance_analytics_summary(
     _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
     low_threshold: float = Query(default=75.0, ge=0.0, le=100.0),
+    department_id: str | None = None,
+    date: str | None = None,
 ) -> dict:
-    st_res = await db.execute(
-        select(Student)
-        .options(
-            selectinload(Student.user),
-            selectinload(Student.department),
-        )
-        .where(Student.deleted_at.is_(None))
-    )
+    st_stmt = select(Student).options(selectinload(Student.user), selectinload(Student.department)).where(Student.deleted_at.is_(None))
+    if department_id and department_id != "all":
+        st_stmt = st_stmt.where(Student.department_id == department_id)
+
+    st_res = await db.execute(st_stmt)
     students = st_res.scalars().all()
 
     total_students = len(students)
@@ -614,14 +641,20 @@ async def attendance_analytics_summary(
     grand_absent_sessions = 0
 
     for st in students:
-        recs_res = await db.execute(
-            select(AttendanceRecord).where(AttendanceRecord.student_id == st.id, AttendanceRecord.deleted_at.is_(None))
-        )
+        rec_stmt = select(AttendanceRecord).where(AttendanceRecord.student_id == st.id, AttendanceRecord.deleted_at.is_(None))
+        if date and date.strip():
+            try:
+                d_obj = datetime.fromisoformat(date.replace("Z", "+00:00")).date()
+                rec_stmt = rec_stmt.join(AttendanceSession).where(func.date(AttendanceSession.session_date) == d_obj)
+            except ValueError:
+                pass
+
+        recs_res = await db.execute(rec_stmt)
         recs = recs_res.scalars().all()
         tot = len(recs)
         pres = len([r for r in recs if r.status in (AttendanceStatus.PRESENT, AttendanceStatus.LATE)])
         absent = len([r for r in recs if r.status == AttendanceStatus.ABSENT])
-        pct = round((pres / tot * 100), 1) if tot > 0 else 100.0
+        pct = round((pres / tot * 100), 1) if tot > 0 else 0.0
 
         grand_total_sessions += tot
         grand_present_sessions += pres
@@ -636,14 +669,13 @@ async def attendance_analytics_summary(
             "presentSessions": pres,
             "absentSessions": absent,
             "percentage": pct,
-            "isLowAttendance": pct < low_threshold,
+            "isLowAttendance": pct < low_threshold if tot > 0 else False,
         })
 
-    overall_pct = round((grand_present_sessions / grand_total_sessions * 100), 1) if grand_total_sessions > 0 else 100.0
+    overall_pct = round((grand_present_sessions / grand_total_sessions * 100), 1) if grand_total_sessions > 0 else 0.0
     low_attendance_students = [s for s in student_stats if s["isLowAttendance"]]
 
-    # Today's active/recent sessions
-    now_str = datetime.now(UTC).strftime("%Y-%m-%d")
+    # Recent sessions
     recent_sess_res = await db.execute(
         select(AttendanceSession)
         .options(
@@ -675,47 +707,85 @@ async def attendance_analytics_summary(
 async def export_attendance_csv(
     _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
+    date: str | None = None,
+    subject_id: str | None = None,
+    department_id: str | None = None,
+    status_filter: str | None = None,
 ) -> StreamingResponse:
-    res = await db.execute(
+    base = (
         select(AttendanceRecord)
         .join(Student, AttendanceRecord.student_id == Student.id)
+        .outerjoin(User, Student.user_id == User.id)
         .join(AttendanceSession, AttendanceRecord.session_id == AttendanceSession.id)
         .options(
             selectinload(AttendanceRecord.student).selectinload(Student.user),
             selectinload(AttendanceRecord.student).selectinload(Student.department),
+            selectinload(AttendanceRecord.student).selectinload(Student.semester),
+            selectinload(AttendanceRecord.student).selectinload(Student.section),
             selectinload(AttendanceRecord.session).selectinload(AttendanceSession.subject),
         )
         .where(AttendanceRecord.deleted_at.is_(None))
         .order_by(AttendanceRecord.created_at.desc())
     )
+
+    if status_filter and status_filter != "all":
+        try:
+            base = base.where(AttendanceRecord.status == AttendanceStatus(status_filter))
+        except ValueError:
+            pass
+    if subject_id and subject_id != "all":
+        base = base.where(AttendanceSession.subject_id == subject_id)
+    if department_id and department_id != "all":
+        base = base.where(Student.department_id == department_id)
+    if date and date.strip():
+        try:
+            d_obj = datetime.fromisoformat(date.replace("Z", "+00:00")).date()
+            base = base.where(func.date(AttendanceSession.session_date) == d_obj)
+        except ValueError:
+            pass
+
+    res = await db.execute(base)
     records = res.scalars().all()
 
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow([
-        "Record ID", "Roll Number", "Student Name", "Department",
-        "Session Title", "Subject", "Session Date", "Status", "Verification Method", "Marked At"
+        "Date", "Batch", "Subject", "Student Name", "Roll Number", "Student ID", "Status", "Timestamp"
     ])
 
+    dept_name = "ALL"
     for r in records:
         st = r.student
         sess = r.session
+        batch_parts = [
+            st.department.name if (st and st.department) else None,
+            st.semester.name if (st and st.semester) else None,
+            st.section.name if (st and st.section) else None,
+        ]
+        clean_batch = " - ".join([b for b in batch_parts if b]) or "General Batch"
+        if st and st.department:
+            dept_name = st.department.name.replace(" ", "_")
+
+        s_date = sess.session_date.strftime("%d-%m-%Y") if (sess and sess.session_date) else ""
+        s_time = r.marked_at.strftime("%H:%M:%S") if r.marked_at else "-"
+
         writer.writerow([
-            str(r.id),
-            st.roll_number if st else "",
+            s_date,
+            clean_batch,
+            sess.subject.name if (sess and sess.subject) else (sess.title if sess else "N/A"),
             st.full_name if st else "",
-            st.department.name if (st and st.department) else "N/A",
-            sess.title if sess else "N/A",
-            sess.subject.name if (sess and sess.subject) else "N/A",
-            sess.session_date.strftime("%Y-%m-%d") if (sess and sess.session_date) else "",
+            st.roll_number if st else "",
+            str(st.id) if st else "",
             r.status.value if hasattr(r.status, "value") else str(r.status),
-            r.verification_method,
-            r.marked_at.isoformat() if r.marked_at else "",
+            s_time,
         ])
 
     output.seek(0)
+    file_date = date or datetime.now(UTC).strftime("%Y-%m-%d")
+    filename = f"attendance_{dept_name}_{file_date}.csv"
+
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=attendance_report_{datetime.now(UTC).strftime('%Y%m%d')}.csv"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

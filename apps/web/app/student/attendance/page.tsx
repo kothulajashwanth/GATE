@@ -205,7 +205,8 @@ export default function StudentAttendancePage() {
                 <TableRow className="border-b border-border/50 text-xs">
                   <TableHead>Subject</TableHead>
                   <TableHead>Classes Conducted</TableHead>
-                  <TableHead>Classes Attended</TableHead>
+                  <TableHead>Present</TableHead>
+                  <TableHead>Absent</TableHead>
                   <TableHead>Attendance Percentage</TableHead>
                 </TableRow>
               </TableHeader>
@@ -215,6 +216,7 @@ export default function StudentAttendancePage() {
                     <TableCell className="font-bold text-foreground">{sb.subjectName}</TableCell>
                     <TableCell>{sb.total}</TableCell>
                     <TableCell className="font-semibold text-emerald-600">{sb.present}</TableCell>
+                    <TableCell className="font-semibold text-rose-600">{sb.absent ?? (sb.total - sb.present)}</TableCell>
                     <TableCell>
                       <div className="space-y-1 max-w-[200px]">
                         <div className="flex justify-between font-bold text-xs">

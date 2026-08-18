@@ -58,6 +58,7 @@ export default function AdminAttendancePage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [subjectFilter, setSubjectFilter] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
 
   // Dialog States
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -79,9 +80,13 @@ export default function AdminAttendancePage() {
   const [durationMinutes, setDurationMinutes] = useState(60);
 
   // Queries
+  const summaryParams: Record<string, unknown> = {};
+  if (deptFilter && deptFilter !== 'all') summaryParams.department_id = deptFilter;
+  if (dateFilter) summaryParams.date = dateFilter;
+
   const { data: summary, isLoading: loadingSummary, refetch: refetchSummary } = useQuery<SummaryData>({
-    queryKey: ['attendance-summary'],
-    queryFn: () => api.get<SummaryData>('/attendance/summary'),
+    queryKey: ['attendance-summary', summaryParams],
+    queryFn: () => api.get<SummaryData>('/attendance/summary', summaryParams),
   });
 
   const { data: subjects = [] } = useQuery<{ id: string; name: string; code: string }[]>({
@@ -99,34 +104,36 @@ export default function AdminAttendancePage() {
   if (statusFilter && statusFilter !== 'all') recordParams.status_filter = statusFilter;
   if (subjectFilter && subjectFilter !== 'all') recordParams.subject_id = subjectFilter;
   if (deptFilter && deptFilter !== 'all') recordParams.department_id = deptFilter;
+  if (dateFilter) recordParams.date = dateFilter;
 
   const { data: recordsData, isLoading: loadingRecords, refetch: refetchRecords } = useQuery({
     queryKey: ['attendance-records', recordParams],
-    queryFn: () => api.get<Paginated<AttendanceRecordRow>>('/attendance/records', recordParams),
+    queryFn: () => api.get<Paginated<any>>('/attendance/records', recordParams),
   });
+
+  const sessionParams: Record<string, unknown> = { page_size: 50 };
+  if (deptFilter && deptFilter !== 'all') sessionParams.department_id = deptFilter;
+  if (subjectFilter && subjectFilter !== 'all') sessionParams.subject_id = subjectFilter;
+  if (dateFilter) sessionParams.date = dateFilter;
 
   const { data: sessionsData, refetch: refetchSessions } = useQuery({
-    queryKey: ['attendance-sessions-list'],
-    queryFn: () => api.get<Paginated<any>>('/attendance/sessions', { page_size: 50 }),
+    queryKey: ['attendance-sessions-list', sessionParams],
+    queryFn: () => api.get<Paginated<any>>('/attendance/sessions', sessionParams),
   });
 
-  // Dynamic QR Token Poller
+  // Auto-refresh active QR token countdown
   useEffect(() => {
     if (!activeQrSession) return;
-
-    let timer: NodeJS.Timeout;
-    const fetchToken = async () => {
+    const fetchQr = async () => {
       try {
-        const res = await api.get<{ token: string; expiresInSeconds: number }>(`/attendance/qr/${activeQrSession.id}`);
-        setQrTokenData(res);
-      } catch (err: any) {
-        toast.error(err.message || 'Failed to generate QR token');
+        const data = await api.get<any>(`/attendance/qr/${activeQrSession.id}`);
+        setQrTokenData(data);
+      } catch {
+        // Fallback
       }
     };
-
-    fetchToken();
-    timer = setInterval(fetchToken, 10000); // Poll fresh token every 10 seconds
-
+    fetchQr();
+    const timer = setInterval(fetchQr, 5000);
     return () => clearInterval(timer);
   }, [activeQrSession, api]);
 
@@ -186,7 +193,13 @@ export default function AdminAttendancePage() {
   const handleExportCsv = async () => {
     try {
       toast.info('Downloading attendance CSV report...');
-      window.open('/api/v1/attendance/export', '_blank');
+      const params = new URLSearchParams();
+      if (dateFilter) params.append('date', dateFilter);
+      if (deptFilter && deptFilter !== 'all') params.append('department_id', deptFilter);
+      if (subjectFilter && subjectFilter !== 'all') params.append('subject_id', subjectFilter);
+      if (statusFilter && statusFilter !== 'all') params.append('status_filter', statusFilter);
+      const url = `/api/v1/attendance/export?${params.toString()}`;
+      window.open(url, '_blank');
     } catch {
       toast.error('Failed to export report');
     }
@@ -375,7 +388,19 @@ export default function AdminAttendancePage() {
                 onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                 className="pl-8 h-8 glass-input text-xs"
               />
-            </div>
+            <Input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => { setDateFilter(e.target.value); setPage(1); }}
+              className="h-8 w-36 glass-input text-xs"
+            />
+            <Select value={deptFilter} onValueChange={(v) => { setDeptFilter(v); setPage(1); }}>
+              <SelectTrigger className="h-8 w-32 glass-input text-xs"><SelectValue placeholder="Batch / Dept" /></SelectTrigger>
+              <SelectContent className="glass-modal">
+                <SelectItem value="all">All Batches</SelectItem>
+                {departments.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(1); }}>
               <SelectTrigger className="h-8 w-28 glass-input text-xs"><SelectValue placeholder="Status" /></SelectTrigger>
               <SelectContent className="glass-modal">
@@ -409,7 +434,7 @@ export default function AdminAttendancePage() {
                 <TableRow className="border-b border-border/50 text-xs">
                   <TableHead>Roll Number</TableHead>
                   <TableHead>Student Name</TableHead>
-                  <TableHead>Department</TableHead>
+                  <TableHead>Batch / Cohort</TableHead>
                   <TableHead>Subject / Session</TableHead>
                   <TableHead>Session Date</TableHead>
                   <TableHead>Verification</TableHead>
@@ -418,11 +443,11 @@ export default function AdminAttendancePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {records.map((r) => (
+                {records.map((r: any) => (
                   <TableRow key={r.id} className="border-b border-border/40 text-xs hover:bg-muted/30">
                     <TableCell className="font-mono font-bold">{r.studentRoll}</TableCell>
                     <TableCell className="font-semibold text-foreground">{r.studentName}</TableCell>
-                    <TableCell>{r.departmentName}</TableCell>
+                    <TableCell><Badge variant="outline" className="text-[10px] font-mono">{r.batch || r.departmentName}</Badge></TableCell>
                     <TableCell className="max-w-[160px] truncate">{r.subjectName}</TableCell>
                     <TableCell>{r.sessionDate ? new Date(r.sessionDate).toLocaleDateString() : 'N/A'}</TableCell>
                     <TableCell>
