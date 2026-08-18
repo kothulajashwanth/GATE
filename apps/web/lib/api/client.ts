@@ -77,14 +77,30 @@ export function createClient(opts: ClientOptions = {}) {
     path: string,
     body?: unknown,
     signal?: AbortSignal,
+  async function request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    signal?: AbortSignal,
   ): Promise<T> {
+    const isFormData =
+      body !== null &&
+      typeof body === 'object' &&
+      ((typeof FormData !== 'undefined' && body instanceof FormData) ||
+        (body as any)?.constructor?.name === 'FormData' ||
+        Object.prototype.toString.call(body) === '[object FormData]' ||
+        typeof (body as any).append === 'function');
+
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       'X-Request-Id':
         typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
           : String(Date.now()),
     };
+
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     const token = await resolveAuthToken();
     if (token) {
@@ -96,24 +112,39 @@ export function createClient(opts: ClientOptions = {}) {
     const response = await fetch(fullUrl, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: isFormData ? (body as FormData) : body === undefined ? undefined : JSON.stringify(body),
       signal,
     });
 
     if (!response.ok) {
       let payload: {
         error?: { code?: string; message?: string; details?: unknown };
-        detail?: string;
+        detail?: string | any[];
       } = {};
       try {
         payload = (await response.json()) as typeof payload;
       } catch {
         // non-json error body
       }
+
+      let errorMsg = payload.error?.message;
+      if (!errorMsg && typeof payload.detail === 'string') {
+        errorMsg = payload.detail;
+      }
+      if (Array.isArray(payload.error?.details) && payload.error.details.length > 0) {
+        const detailMsgs = payload.error.details
+          .map((d: any) => (d.loc ? `${d.loc.join('.')}: ${d.msg}` : d.msg || JSON.stringify(d)))
+          .join('; ');
+        errorMsg = errorMsg ? `${errorMsg} (${detailMsgs})` : detailMsgs;
+      }
+      if (!errorMsg) {
+        errorMsg = `Request failed with status ${response.status}`;
+      }
+
       throw new ApiError(
         response.status,
         payload.error?.code ?? 'request_failed',
-        payload.error?.message ?? payload.detail ?? `Request failed with status ${response.status}`,
+        errorMsg,
         payload.error?.details,
       );
     }
@@ -129,10 +160,15 @@ export function createClient(opts: ClientOptions = {}) {
     post<T>(path: string, body?: unknown, signal?: AbortSignal) {
       return request<T>('POST', path, body, signal);
     },
+    upload<T>(path: string, formData: FormData, signal?: AbortSignal) {
+      return request<T>('POST', path, formData, signal);
+    },
     put<T>(path: string, body?: unknown, signal?: AbortSignal) {
       return request<T>('PUT', path, body, signal);
     },
     patch<T>(path: string, body?: unknown, signal?: AbortSignal) {
+      return request<T>('PATCH', path, body, signal);
+    },
       return request<T>('PATCH', path, body, signal);
     },
     delete<T>(path: string, signal?: AbortSignal) {

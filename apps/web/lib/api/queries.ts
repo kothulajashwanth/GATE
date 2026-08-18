@@ -13,7 +13,7 @@ export function useMe(options?: Partial<UseQueryOptions<User>>) {
   const api = useApiClient();
   return useQuery({
     queryKey: ['me'],
-    queryFn: () => api.get<User>('/v1/me'),
+    queryFn: () => api.get<User>('/me'),
     staleTime: 5 * 60 * 1000,
     ...options,
   });
@@ -34,6 +34,6 @@ export function useStudents(params: Record<string, unknown>) {
   const api = useApiClient();
   return useQuery({
     queryKey: ['students', params],
-    queryFn: () => api.get<Paginated<StudentRow>>('/v1/students', params),
+    queryFn: () => api.get<Paginated<StudentRow>>('/students', params),
   });
 }

@@ -94,7 +94,7 @@ export default function QuestionRepositoryPage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const uf = await api.post<UploadedFileItem>('/question-bank/files', formData);
+      const uf = await api.upload<UploadedFileItem>('/question-bank/files', formData);
       toast.success(`Uploaded ${file.name} successfully!`);
       refetch();
 

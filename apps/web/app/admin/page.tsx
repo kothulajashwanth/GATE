@@ -50,7 +50,7 @@ export default function AdminDashboard() {
           api.get<Paginated<unknown>>('/students', { page_size: 1, page: 1 }),
           api.get<Paginated<unknown>>('/exams', { page_size: 1, page: 1 }),
           api.get<Paginated<unknown>>('/questions', { page_size: 1, page: 1 }),
-          api.get<Paginated<unknown>>('/exam-sessions', { page_size: 1, page: 1 }),
+          api.get<Paginated<unknown>>('/sessions', { page_size: 1, page: 1 }),
         ]);
         return {
           totalStudents: students.total ?? 0,

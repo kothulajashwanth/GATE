@@ -61,8 +61,11 @@ class UploadedFileOut(BaseModel):
     createdAt: str
 
 
+from datetime import UTC, datetime
+
 def _file_out(uf: UploadedFile) -> UploadedFileOut:
     size_str = f"{round(uf.file_size / 1024, 1)} KB" if uf.file_size < 1024 * 1024 else f"{round(uf.file_size / (1024 * 1024), 2)} MB"
+    created_str = uf.created_at.isoformat() if getattr(uf, "created_at", None) else datetime.now(UTC).isoformat()
     return UploadedFileOut(
         id=str(uf.id),
         fileName=uf.file_name,
@@ -72,7 +75,7 @@ def _file_out(uf: UploadedFile) -> UploadedFileOut:
         status=uf.status.lower(),
         questionsFound=uf.questions_found,
         ocrUsed=uf.ocr_used,
-        createdAt=uf.created_at.isoformat(),
+        createdAt=created_str,
     )
 
 
@@ -170,9 +173,11 @@ async def upload_question_file(
     request: Request,
     actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File(...)],
 ) -> UploadedFileOut:
-    ext = file.filename.lower().split('.')[-1] if file.filename else ""
+    raw_filename = file.filename or "uploaded_file"
+    safe_filename = os.path.basename(raw_filename)
+    ext = (safe_filename.split('.')[-1] if '.' in safe_filename else "").lower()
     if ext not in ["pdf", "docx", "txt", "xlsx", "xls"]:
         raise ValidationError(f"Unsupported file type .{ext}. Allowed types: .pdf, .docx, .txt, .xlsx")
 
@@ -180,7 +185,7 @@ async def upload_question_file(
     if len(content) > 20 * 1024 * 1024:  # 20MB limit
         raise ValidationError("File size exceeds 20MB limit")
 
-    unique_filename = f"{uuid.uuid4()}_{file.filename}"
+    unique_filename = f"{uuid.uuid4()}_{safe_filename}"
     storage_path = os.path.join(UPLOAD_DIR, unique_filename)
     with open(storage_path, "wb") as f:
         f.write(content)
@@ -188,7 +193,7 @@ async def upload_question_file(
     service = QuestionService(db)
     uf = await service.create_uploaded_file(
         file_name=unique_filename,
-        original_name=file.filename or "uploaded_file",
+        original_name=safe_filename,
         file_type=ext,
         file_size=len(content),
         storage_url=storage_path,
@@ -202,7 +207,7 @@ async def upload_question_file(
         action="QUESTION_FILE_UPLOADED",
         entity_type="uploaded_file",
         entity_id=str(uf.id),
-        new_value={"filename": file.filename, "size": len(content)},
+        new_value={"filename": safe_filename, "size": len(content)},
     )
     await db.commit()
     await db.refresh(uf)
@@ -321,7 +326,7 @@ async def upload_document_legacy(
     request: Request,
     actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File(...)],
     subject_id: str | None = None,
 ) -> dict:
     content = await file.read()
