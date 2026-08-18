@@ -196,10 +196,10 @@ export default function AdminAttendancePage() {
         description="Create live class sessions, generate dynamic QR codes, track real-time scans, auto-mark absent students, and view low-attendance analytics."
       >
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleExportCsv} className="glass-button">
+          <Button variant="outline" size="sm" onClick={handleExportCsv} className="glass-button cursor-pointer">
             <Download className="h-4 w-4 mr-1.5" /> Export CSV
           </Button>
-          <Button size="sm" onClick={() => setIsCreateOpen(true)} className="glass-button bg-primary text-white">
+          <Button size="sm" onClick={() => setIsCreateOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md border border-primary/30 cursor-pointer text-xs font-semibold">
             <Plus className="h-4 w-4 mr-1.5" /> Create Session
           </Button>
         </div>
@@ -265,19 +265,23 @@ export default function AdminAttendancePage() {
             <Clock className="h-4 w-4 text-primary" /> Attendance Sessions Overview
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => refetchSessions()} className="h-7 text-xs">
+            <Button size="sm" variant="ghost" onClick={() => refetchSessions()} className="h-7 text-xs cursor-pointer">
               <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
             </Button>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)} className="h-7 text-xs glass-button bg-primary text-white font-semibold shadow-xs">
+            <Button size="sm" onClick={() => setIsCreateOpen(true)} className="h-7 text-xs bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm border border-primary/30 cursor-pointer font-semibold">
               <Plus className="h-3.5 w-3.5 mr-1" /> Create Session
             </Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-3 text-xs pt-0">
           {!sessions.length ? (
-            <div className="p-6 text-center space-y-3 bg-muted/10 rounded-xl border border-dashed border-border/60">
+            <div className="p-6 text-center space-y-3 bg-muted/10 rounded-xl border border-dashed border-border/60 flex flex-col items-center justify-center">
               <p className="text-muted-foreground text-xs font-medium">No attendance sessions created yet.</p>
-              <Button size="sm" onClick={() => setIsCreateOpen(true)} className="glass-button bg-primary text-white text-xs">
+              <Button
+                size="sm"
+                onClick={() => setIsCreateOpen(true)}
+                className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md border border-primary/30 cursor-pointer text-xs font-semibold px-4 py-2 transition-all flex items-center justify-center"
+              >
                 <Plus className="h-3.5 w-3.5 mr-1.5" /> Create First Session
               </Button>
             </div>
