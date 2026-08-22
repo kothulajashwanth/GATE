@@ -52,6 +52,17 @@ class RecordUpdate(BaseModel):
     notes: str | None = None
 
 
+class StudentAttendanceItem(BaseModel):
+    studentId: str
+    status: AttendanceStatus
+    notes: str | None = None
+
+
+class BulkRecordRequest(BaseModel):
+    records: list[StudentAttendanceItem]
+
+
+
 # ---------- Helpers ----------
 
 async def _student_or_404(db: AsyncSession, user: User) -> Student:
@@ -548,7 +559,126 @@ async def update_record_status(
     return {"id": record_id, "status": body.status.value if hasattr(body.status, "value") else str(body.status)}
 
 
+@router.get("/sessions/{session_id}/students", summary="Get roster of students for a session batch with attendance status")
+async def get_session_students(
+    session_id: str,
+    _: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[dict]:
+    res = await db.execute(select(AttendanceSession).where(AttendanceSession.id == session_id, AttendanceSession.deleted_at.is_(None)))
+    s = res.scalar_one_or_none()
+    if not s:
+        raise NotFoundError("Attendance session not found")
+
+    st_stmt = (
+        select(Student)
+        .options(
+            selectinload(Student.user),
+            selectinload(Student.department),
+            selectinload(Student.semester),
+            selectinload(Student.section),
+        )
+        .where(Student.deleted_at.is_(None))
+        .order_by(Student.roll_number)
+    )
+
+    if s.department_id:
+        st_stmt = st_stmt.where(Student.department_id == s.department_id)
+    if s.semester_id:
+        st_stmt = st_stmt.where(Student.semester_id == s.semester_id)
+    if s.section_id:
+        st_stmt = st_stmt.where(Student.section_id == s.section_id)
+
+    st_res = await db.execute(st_stmt)
+    students = st_res.scalars().all()
+
+    rec_res = await db.execute(
+        select(AttendanceRecord).where(AttendanceRecord.session_id == session_id, AttendanceRecord.deleted_at.is_(None))
+    )
+    records_by_student = {str(r.student_id): r for r in rec_res.scalars().all()}
+
+    output = []
+    for st in students:
+        st_id_str = str(st.id)
+        rec = records_by_student.get(st_id_str)
+        status_val = rec.status.value if rec and hasattr(rec.status, "value") else (str(rec.status) if rec else "UNMARKED")
+        output.append({
+            "studentId": st_id_str,
+            "rollNumber": st.roll_number,
+            "name": st.full_name,
+            "departmentName": st.department.name if st.department else "N/A",
+            "status": status_val,
+            "notes": rec.notes if rec else "",
+            "markedAt": rec.marked_at.isoformat() if rec and rec.marked_at else "",
+        })
+
+    return output
+
+
+@router.post("/sessions/{session_id}/bulk-records", summary="Bulk save/update student attendance for a session")
+async def bulk_save_session_attendance(
+    session_id: str,
+    body: BulkRecordRequest,
+    request: Request,
+    actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    res = await db.execute(select(AttendanceSession).where(AttendanceSession.id == session_id, AttendanceSession.deleted_at.is_(None)))
+    s = res.scalar_one_or_none()
+    if not s:
+        raise NotFoundError("Attendance session not found")
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    saved_count = 0
+
+    for item in body.records:
+        if not item.studentId or item.status not in (AttendanceStatus.PRESENT, AttendanceStatus.ABSENT, AttendanceStatus.LATE, "PRESENT", "ABSENT", "LATE"):
+            continue
+
+        rec_res = await db.execute(
+            select(AttendanceRecord).where(
+                AttendanceRecord.session_id == s.id,
+                AttendanceRecord.student_id == item.studentId,
+            )
+        )
+        rec = rec_res.scalar_one_or_none()
+
+        status_enum = AttendanceStatus(item.status)
+        if rec:
+            rec.status = status_enum
+            rec.marked_at = now
+            rec.verification_method = "MANUAL_ADMIN"
+            if item.notes is not None:
+                rec.notes = item.notes
+        else:
+            rec = AttendanceRecord(
+                session_id=s.id,
+                student_id=item.studentId,
+                status=status_enum,
+                marked_at=now,
+                verification_method="MANUAL_ADMIN",
+                notes=item.notes,
+            )
+            db.add(rec)
+
+        saved_count += 1
+
+    await AuditService.log(
+        db,
+        actor=actor,
+        request=request,
+        action="ATTENDANCE_BULK_RECORDED",
+        entity_type="attendance_session",
+        entity_id=session_id,
+        new_value={"saved_count": saved_count},
+    )
+    await db.commit()
+
+    return {"success": True, "savedCount": saved_count}
+
+
 @router.get("/students/me", summary="Student personal attendance summary & history")
+
 async def student_my_attendance(
     user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],

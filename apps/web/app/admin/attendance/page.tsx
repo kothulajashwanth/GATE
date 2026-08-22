@@ -137,6 +137,41 @@ export default function AdminAttendancePage() {
     return () => clearInterval(timer);
   }, [activeQrSession, api]);
 
+  // Session Roster State
+  const [selectedSessionForRoster, setSelectedSessionForRoster] = useState<any | null>(null);
+  const [rosterStatusMap, setRosterStatusMap] = useState<Record<string, 'PRESENT' | 'ABSENT' | 'LATE' | 'UNMARKED'>>({});
+
+  const { data: sessionStudents = [], isLoading: loadingRoster, refetch: refetchRoster } = useQuery<any[]>({
+    queryKey: ['session-students', selectedSessionForRoster?.id],
+    queryFn: () => api.get<any[]>(`/attendance/sessions/${selectedSessionForRoster?.id}/students`),
+    enabled: !!selectedSessionForRoster?.id,
+  });
+
+  useEffect(() => {
+    if (sessionStudents && sessionStudents.length > 0) {
+      const initialMap: Record<string, 'PRESENT' | 'ABSENT' | 'LATE' | 'UNMARKED'> = {};
+      sessionStudents.forEach((st) => {
+        initialMap[st.studentId] = st.status || 'UNMARKED';
+      });
+      setRosterStatusMap(initialMap);
+    }
+  }, [sessionStudents]);
+
+  const bulkSaveMutation = useMutation({
+    mutationFn: ({ sessionId, records }: { sessionId: string; records: { studentId: string; status: string }[] }) =>
+      api.post(`/attendance/sessions/${sessionId}/bulk-records`, { records }),
+    onSuccess: (res: any) => {
+      toast.success(`Successfully saved attendance for ${res.savedCount || 0} student(s)!`);
+      refetchRoster();
+      refetchSessions();
+      refetchRecords();
+      refetchSummary();
+      queryClient.invalidateQueries({ queryKey: ['attendance-summary'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'Failed to save attendance'),
+  });
+
+
   // Mutations
   const createMutation = useMutation({
     mutationFn: (payload: any) => api.post('/attendance/sessions', payload),
@@ -341,27 +376,37 @@ export default function AdminAttendancePage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 pt-2 border-t border-border/30">
-                      {s.status === 'DRAFT' && (
-                        <Button size="sm" variant="outline" className="h-7 text-xs w-full glass-button" onClick={() => activateMutation.mutate(s.id)}>
-                          <Play className="h-3 w-3 mr-1 text-emerald-600" /> Activate & Display QR
-                        </Button>
-                      )}
-                      {s.status === 'ACTIVE' && (
-                        <>
-                          <Button size="sm" className="h-7 text-xs flex-1 glass-button bg-primary text-white" onClick={() => setActiveQrSession(s)}>
-                            <QrCode className="h-3 w-3 mr-1" /> Display QR
+                    <div className="flex flex-col gap-2 pt-2 border-t border-border/30">
+                      <Button
+                        size="sm"
+                        variant={selectedSessionForRoster?.id === s.id ? 'default' : 'outline'}
+                        className={`h-7 text-xs w-full ${selectedSessionForRoster?.id === s.id ? 'bg-primary text-primary-foreground font-bold' : 'glass-button'}`}
+                        onClick={() => setSelectedSessionForRoster(s)}
+                      >
+                        <Users className="h-3 w-3 mr-1" /> {selectedSessionForRoster?.id === s.id ? 'Active Roster' : 'Mark Batch Attendance'}
+                      </Button>
+                      <div className="flex items-center gap-2">
+                        {s.status === 'DRAFT' && (
+                          <Button size="sm" variant="outline" className="h-7 text-xs w-full glass-button" onClick={() => activateMutation.mutate(s.id)}>
+                            <Play className="h-3 w-3 mr-1 text-emerald-600" /> Activate & Display QR
                           </Button>
-                          <Button size="sm" variant="destructive" className="h-7 text-xs flex-1" onClick={() => closeMutation.mutate(s.id)}>
-                            <Lock className="h-3 w-3 mr-1" /> End Session
-                          </Button>
-                        </>
-                      )}
-                      {s.status === 'CLOSED' && (
-                        <Badge variant="outline" className="w-full justify-center text-[10px] py-1 bg-muted/40 text-muted-foreground font-semibold">
-                          Session Ended (Auto-Absent Complete)
-                        </Badge>
-                      )}
+                        )}
+                        {s.status === 'ACTIVE' && (
+                          <>
+                            <Button size="sm" className="h-7 text-xs flex-1 glass-button bg-primary text-white" onClick={() => setActiveQrSession(s)}>
+                              <QrCode className="h-3 w-3 mr-1" /> Display QR
+                            </Button>
+                            <Button size="sm" variant="destructive" className="h-7 text-xs flex-1" onClick={() => closeMutation.mutate(s.id)}>
+                              <Lock className="h-3 w-3 mr-1" /> End Session
+                            </Button>
+                          </>
+                        )}
+                        {s.status === 'CLOSED' && (
+                          <Badge variant="outline" className="w-full justify-center text-[10px] py-1 bg-muted/40 text-muted-foreground font-semibold">
+                            Session Ended (Auto-Absent Complete)
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -370,6 +415,143 @@ export default function AdminAttendancePage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Interactive Batch Attendance Roster Card */}
+      {selectedSessionForRoster && (
+        <Card className="glass-card border-primary/40 shadow-lg">
+          <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 py-3 border-b border-border/40">
+            <div>
+              <CardTitle className="text-sm font-bold text-primary flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" /> Marking Roster: {selectedSessionForRoster.title}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Batch: <span className="font-semibold text-foreground">{selectedSessionForRoster.department?.name || 'All Batches'}</span> | Subject: <span className="font-semibold text-foreground">{selectedSessionForRoster.subject?.name || 'General'}</span> | Students Enrolled: <span className="font-bold text-foreground">{sessionStudents.length}</span>
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs cursor-pointer"
+                onClick={() => {
+                  const allPresent: Record<string, 'PRESENT'> = {};
+                  sessionStudents.forEach((st: any) => { allPresent[st.studentId] = 'PRESENT'; });
+                  setRosterStatusMap(allPresent);
+                  toast.info('Marked all students as PRESENT');
+                }}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-600" /> Mark All Present
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs cursor-pointer text-rose-600 hover:text-rose-700"
+                onClick={() => {
+                  const allAbsent: Record<string, 'ABSENT'> = {};
+                  sessionStudents.forEach((st: any) => { allAbsent[st.studentId] = 'ABSENT'; });
+                  setRosterStatusMap(allAbsent);
+                  toast.info('Marked all students as ABSENT');
+                }}
+              >
+                <XCircle className="h-3.5 w-3.5 mr-1 text-rose-600" /> Mark All Absent
+              </Button>
+              <Button
+                size="sm"
+                className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90 shadow-md font-semibold cursor-pointer"
+                disabled={bulkSaveMutation.isPending}
+                onClick={() => {
+                  const recordsToSave = sessionStudents
+                    .map((st: any) => ({
+                      studentId: st.studentId,
+                      status: rosterStatusMap[st.studentId] || 'UNMARKED',
+                    }))
+                    .filter((r: any) => r.status !== 'UNMARKED');
+
+                  if (!recordsToSave.length) {
+                    toast.warning('Please mark at least one student status before saving.');
+                    return;
+                  }
+
+                  bulkSaveMutation.mutate({
+                    sessionId: selectedSessionForRoster.id,
+                    records: recordsToSave,
+                  });
+                }}
+              >
+                {bulkSaveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />}
+                Save Attendance to Database
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelectedSessionForRoster(null)} className="h-8 text-xs text-muted-foreground">
+                Close
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {loadingRoster ? (
+              <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" /> Loading batch students roster...
+              </div>
+            ) : !sessionStudents.length ? (
+              <div className="p-8 text-center text-xs text-muted-foreground">
+                No active students enrolled in this batch ({selectedSessionForRoster.department?.name || 'All Batches'}).
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-b border-border/50 text-xs">
+                    <TableHead>Roll Number</TableHead>
+                    <TableHead>Student Name</TableHead>
+                    <TableHead>Batch / Department</TableHead>
+                    <TableHead>Current Status</TableHead>
+                    <TableHead className="text-right">Mark Attendance Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sessionStudents.map((st: any) => {
+                    const currentStatus = rosterStatusMap[st.studentId] || 'UNMARKED';
+                    return (
+                      <TableRow key={st.studentId} className="border-b border-border/40 text-xs hover:bg-muted/30">
+                        <TableCell className="font-mono font-bold">{st.rollNumber}</TableCell>
+                        <TableCell className="font-semibold text-foreground">{st.name}</TableCell>
+                        <TableCell><Badge variant="outline" className="text-[10px] font-mono">{st.departmentName}</Badge></TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={currentStatus === 'PRESENT' ? 'default' : currentStatus === 'LATE' ? 'secondary' : currentStatus === 'ABSENT' ? 'destructive' : 'outline'}
+                            className={currentStatus === 'PRESENT' ? 'bg-emerald-600 text-xs' : 'text-xs'}
+                          >
+                            {currentStatus}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              size="sm"
+                              variant={currentStatus === 'PRESENT' ? 'default' : 'outline'}
+                              className={currentStatus === 'PRESENT' ? 'bg-emerald-600 hover:bg-emerald-700 h-7 text-xs px-3 font-semibold' : 'h-7 text-xs px-3'}
+                              onClick={() => setRosterStatusMap((prev) => ({ ...prev, [st.studentId]: 'PRESENT' }))}
+                            >
+                              <CheckCircle2 className="h-3 w-3 mr-1" /> Present
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={currentStatus === 'ABSENT' ? 'destructive' : 'outline'}
+                              className="h-7 text-xs px-3"
+                              onClick={() => setRosterStatusMap((prev) => ({ ...prev, [st.studentId]: 'ABSENT' }))}
+                            >
+                              <XCircle className="h-3 w-3 mr-1" /> Absent
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
 
       {/* Main Attendance Records Table */}
       <Card className="glass-card">
