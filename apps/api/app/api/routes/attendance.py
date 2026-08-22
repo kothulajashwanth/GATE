@@ -40,6 +40,8 @@ class SessionCreate(BaseModel):
     sessionDate: str  # ISO string or YYYY-MM-DD
     startTime: str    # ISO string or HH:MM
     durationMinutes: int = Field(default=60, ge=5, le=480)
+    status: SessionState | None = None
+
 
 
 class ScanRequest(BaseModel):
@@ -60,6 +62,11 @@ class StudentAttendanceItem(BaseModel):
 
 class BulkRecordRequest(BaseModel):
     records: list[StudentAttendanceItem]
+
+
+class RespondRequest(BaseModel):
+    status: AttendanceStatus
+
 
 
 
@@ -152,8 +159,9 @@ async def create_session(
     now_naive = datetime.now(UTC).replace(tzinfo=None)
     start_dt_naive = start_dt.replace(tzinfo=None) if start_dt.tzinfo else start_dt
 
-    # If start time is current or in the past, activate immediately for QR scanning
-    initial_status = SessionState.ACTIVE if start_dt_naive <= now_naive else SessionState.DRAFT
+    # If status specified or start time is current/past, activate immediately for live attendance check-in
+    initial_status = body.status if body.status else (SessionState.ACTIVE if start_dt_naive <= now_naive else SessionState.ACTIVE)
+
 
     session = AttendanceSession(
         title=body.title,
@@ -598,10 +606,25 @@ async def get_session_students(
     records_by_student = {str(r.student_id): r for r in rec_res.scalars().all()}
 
     output = []
+    present_cnt = 0
+    absent_cnt = 0
+    pending_cnt = 0
+
     for st in students:
         st_id_str = str(st.id)
         rec = records_by_student.get(st_id_str)
-        status_val = rec.status.value if rec and hasattr(rec.status, "value") else (str(rec.status) if rec else "UNMARKED")
+        if rec:
+            status_val = rec.status.value if hasattr(rec.status, "value") else str(rec.status)
+        else:
+            status_val = "PENDING"
+
+        if status_val in ("PRESENT", "LATE"):
+            present_cnt += 1
+        elif status_val == "ABSENT":
+            absent_cnt += 1
+        else:
+            pending_cnt += 1
+
         output.append({
             "studentId": st_id_str,
             "rollNumber": st.roll_number,
@@ -613,6 +636,7 @@ async def get_session_students(
         })
 
     return output
+
 
 
 @router.post("/sessions/{session_id}/bulk-records", summary="Bulk save/update student attendance for a session")
@@ -677,7 +701,158 @@ async def bulk_save_session_attendance(
     return {"success": True, "savedCount": saved_count}
 
 
+@router.get("/active", summary="Get currently active attendance session for student's batch")
+@router.get("/student/active", summary="Get currently active attendance session for student's batch")
+async def get_active_student_session(
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    student = await _student_or_404(db, user)
+
+    sess_stmt = (
+        select(AttendanceSession)
+        .options(
+            selectinload(AttendanceSession.subject),
+            selectinload(AttendanceSession.department),
+            selectinload(AttendanceSession.semester),
+            selectinload(AttendanceSession.section),
+        )
+        .where(
+            AttendanceSession.status == SessionState.ACTIVE,
+            AttendanceSession.deleted_at.is_(None),
+        )
+        .order_by(AttendanceSession.created_at.desc())
+    )
+
+    if student.department_id:
+        sess_stmt = sess_stmt.where(
+            (AttendanceSession.department_id == student.department_id) | (AttendanceSession.department_id.is_(None))
+        )
+
+    res = await db.execute(sess_stmt)
+    active_sessions = res.scalars().all()
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    for s in active_sessions:
+        start_time_naive = s.start_time.replace(tzinfo=None) if s.start_time.tzinfo else s.start_time
+        end_time_dt = start_time_naive + timedelta(minutes=s.duration_minutes)
+
+        if now > end_time_dt:
+            s.status = SessionState.CLOSED
+            await db.commit()
+            continue
+
+        rec_res = await db.execute(
+            select(AttendanceRecord).where(
+                AttendanceRecord.session_id == s.id,
+                AttendanceRecord.student_id == student.id,
+                AttendanceRecord.deleted_at.is_(None),
+            )
+        )
+        existing_rec = rec_res.scalar_one_or_none()
+
+        remaining_sec = max(0, int((end_time_dt - now).total_seconds()))
+
+        return {
+            "hasActiveSession": True,
+            "session": {
+                "id": str(s.id),
+                "title": s.title,
+                "subjectName": s.subject.name if s.subject else (s.title or "General Class"),
+                "batchName": s.department.name if s.department else "All Batches",
+                "sessionDate": s.session_date.isoformat() if s.session_date else "",
+                "startTime": start_time_naive.isoformat(),
+                "endTime": end_time_dt.isoformat(),
+                "durationMinutes": s.duration_minutes,
+                "remainingSeconds": remaining_sec,
+            },
+            "myResponse": {
+                "status": existing_rec.status.value if hasattr(existing_rec.status, "value") else str(existing_rec.status),
+                "markedAt": existing_rec.marked_at.isoformat() if existing_rec.marked_at else "",
+            } if existing_rec else None,
+        }
+
+    return {"hasActiveSession": False, "session": None, "myResponse": None}
+
+
+@router.post("/sessions/{session_id}/respond", summary="Student check-in response (PRESENT or ABSENT)")
+async def student_respond_attendance(
+    session_id: str,
+    body: RespondRequest,
+    request: Request,
+    user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    student = await _student_or_404(db, user)
+
+    res = await db.execute(
+        select(AttendanceSession)
+        .options(
+            selectinload(AttendanceSession.subject),
+            selectinload(AttendanceSession.department),
+        )
+        .where(AttendanceSession.id == session_id, AttendanceSession.deleted_at.is_(None))
+    )
+    s = res.scalar_one_or_none()
+    if not s:
+        raise NotFoundError("Attendance session not found")
+
+    if s.status != SessionState.ACTIVE:
+        raise BadRequestError("This attendance session is no longer active.")
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    start_time_naive = s.start_time.replace(tzinfo=None) if s.start_time.tzinfo else s.start_time
+    end_time_dt = start_time_naive + timedelta(minutes=s.duration_minutes)
+
+    if now > end_time_dt:
+        s.status = SessionState.CLOSED
+        await db.commit()
+        raise BadRequestError("Attendance response window for this session has closed.")
+
+    if s.department_id and student.department_id and str(s.department_id) != str(student.department_id):
+        raise ForbiddenError("You are not enrolled in the batch assigned to this attendance session.")
+
+    dup_res = await db.execute(
+        select(AttendanceRecord).where(
+            AttendanceRecord.session_id == s.id,
+            AttendanceRecord.student_id == student.id,
+        )
+    )
+    if dup_res.scalar_one_or_none() is not None:
+        raise ConflictError("You have already recorded your attendance for this session.")
+
+    rec = AttendanceRecord(
+        session_id=s.id,
+        student_id=student.id,
+        status=body.status,
+        marked_at=now,
+        verification_method="STUDENT_CHECKIN",
+    )
+    db.add(rec)
+
+    await AuditService.log(
+        db,
+        actor=user,
+        request=request,
+        action="STUDENT_ATTENDANCE_CHECKIN",
+        entity_type="attendance_record",
+        entity_id=str(s.id),
+        new_value={"status": body.status.value if hasattr(body.status, "value") else str(body.status)},
+    )
+    await db.commit()
+
+    return {
+        "success": True,
+        "status": body.status.value if hasattr(body.status, "value") else str(body.status),
+        "sessionTitle": s.title,
+        "subjectName": s.subject.name if s.subject else s.title,
+        "markedAt": now.isoformat(),
+    }
+
+
 @router.get("/students/me", summary="Student personal attendance summary & history")
+
 
 async def student_my_attendance(
     user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],

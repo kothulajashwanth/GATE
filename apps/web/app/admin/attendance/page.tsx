@@ -176,17 +176,26 @@ export default function AdminAttendancePage() {
     queryKey: ['session-students', selectedSessionForRoster?.id],
     queryFn: () => api.get<any[]>(`/attendance/sessions/${selectedSessionForRoster?.id}/students`),
     enabled: !!selectedSessionForRoster?.id,
+    refetchInterval: selectedSessionForRoster?.status === 'ACTIVE' ? 5000 : false,
   });
 
   useEffect(() => {
     if (sessionStudents && sessionStudents.length > 0) {
-      const initialMap: Record<string, 'PRESENT' | 'ABSENT' | 'LATE' | 'UNMARKED'> = {};
-      sessionStudents.forEach((st) => {
-        initialMap[st.studentId] = st.status || 'UNMARKED';
+      setRosterStatusMap((prev) => {
+        const updated = { ...prev };
+        sessionStudents.forEach((st) => {
+          // If status is present/absent from backend checkin, keep it updated
+          if (st.status && st.status !== 'PENDING' && st.status !== 'UNMARKED') {
+            updated[st.studentId] = st.status;
+          } else if (!updated[st.studentId]) {
+            updated[st.studentId] = st.status || 'PENDING';
+          }
+        });
+        return updated;
       });
-      setRosterStatusMap(initialMap);
     }
   }, [sessionStudents]);
+
 
   const bulkSaveMutation = useMutation({
     mutationFn: ({ sessionId, records }: { sessionId: string; records: { studentId: string; status: string }[] }) =>
@@ -591,7 +600,7 @@ export default function AdminAttendancePage() {
                 </TableHeader>
                 <TableBody>
                   {sessionStudents.map((st: any) => {
-                    const currentStatus = rosterStatusMap[st.studentId] || 'UNMARKED';
+                    const currentStatus = rosterStatusMap[st.studentId] || st.status || 'PENDING';
                     return (
                       <TableRow key={st.studentId} className="border-b border-border/40 text-xs hover:bg-muted/30">
                         <TableCell className="font-mono font-bold">{st.rollNumber}</TableCell>
@@ -599,12 +608,19 @@ export default function AdminAttendancePage() {
                         <TableCell><Badge variant="outline" className="text-[10px] font-mono">{st.departmentName}</Badge></TableCell>
                         <TableCell>
                           <Badge
-                            variant={currentStatus === 'PRESENT' ? 'default' : currentStatus === 'LATE' ? 'secondary' : currentStatus === 'ABSENT' ? 'destructive' : 'outline'}
-                            className={currentStatus === 'PRESENT' ? 'bg-emerald-600 text-xs' : 'text-xs'}
+                            variant={currentStatus === 'PRESENT' ? 'default' : currentStatus === 'ABSENT' ? 'destructive' : 'outline'}
+                            className={
+                              currentStatus === 'PRESENT'
+                                ? 'bg-emerald-600 text-white font-bold text-xs'
+                                : currentStatus === 'ABSENT'
+                                ? 'bg-rose-600 text-white font-bold text-xs'
+                                : 'text-amber-500 border-amber-500 font-bold text-xs'
+                            }
                           >
                             {currentStatus}
                           </Badge>
                         </TableCell>
+
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <Button
