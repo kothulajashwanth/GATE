@@ -8,9 +8,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useApiClient } from '@/lib/api/client-provider';
 import { formatDateTime, formatDuration } from '@examshield/utils';
-
-import { Button } from '@examshield/ui';
 import Link from 'next/link';
+
 import type { Paginated } from '@examshield/types';
 
 interface ExamPreview {
