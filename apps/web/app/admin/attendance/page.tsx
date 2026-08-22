@@ -10,8 +10,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@examshield/ui';
 import {
-  Users, CheckCircle2, XCircle, AlertTriangle, QrCode, Plus, Search, Download, RefreshCw, Loader2, Play, Lock, Eye, Edit, Clock, ShieldCheck, Percent, FileSpreadsheet
+  Users, CheckCircle2, XCircle, AlertTriangle, QrCode, Plus, Search, Download, RefreshCw, Loader2, Play, Lock, Eye, Edit, Clock, ShieldCheck, Percent, FileSpreadsheet, Send
 } from 'lucide-react';
+
 import { toast } from 'sonner';
 import type { Paginated } from '@examshield/types';
 
