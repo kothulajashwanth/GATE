@@ -137,6 +137,37 @@ export default function AdminAttendancePage() {
     return () => clearInterval(timer);
   }, [activeQrSession, api]);
 
+  // Refresh All State & Handler
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleRefreshAll = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refetchSessions(),
+        refetchSummary(),
+        refetchRecords(),
+        selectedSessionForRoster ? refetchRoster() : Promise.resolve(),
+      ]);
+      toast.success('Attendance records refreshed from database');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to refresh attendance data');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setStatusFilter('all');
+    setSubjectFilter('');
+    setDeptFilter('');
+    setDateFilter('');
+    setPage(1);
+    toast.info('Filters reset');
+  };
+
   // Session Roster State
   const [selectedSessionForRoster, setSelectedSessionForRoster] = useState<any | null>(null);
   const [rosterStatusMap, setRosterStatusMap] = useState<Record<string, 'PRESENT' | 'ABSENT' | 'LATE' | 'UNMARKED'>>({});
@@ -171,11 +202,10 @@ export default function AdminAttendancePage() {
     onError: (e: Error) => toast.error(e.message || 'Failed to save attendance'),
   });
 
-
   // Mutations
   const createMutation = useMutation({
     mutationFn: (payload: any) => api.post('/attendance/sessions', payload),
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       toast.success('Attendance session created!');
       setIsCreateOpen(false);
       setTitle('');
@@ -187,6 +217,9 @@ export default function AdminAttendancePage() {
       refetchSummary();
       queryClient.invalidateQueries({ queryKey: ['attendance-summary'] });
       queryClient.invalidateQueries({ queryKey: ['attendance-sessions-list'] });
+      if (res && res.id) {
+        setSelectedSessionForRoster(res);
+      }
     },
     onError: (e: Error) => toast.error(e.message || 'Failed to create session'),
   });
@@ -227,21 +260,34 @@ export default function AdminAttendancePage() {
 
   const handleExportCsv = async () => {
     try {
-      toast.info('Downloading attendance CSV report...');
-      const params = new URLSearchParams();
-      if (dateFilter) params.append('date', dateFilter);
-      if (deptFilter && deptFilter !== 'all') params.append('department_id', deptFilter);
-      if (subjectFilter && subjectFilter !== 'all') params.append('subject_id', subjectFilter);
-      if (statusFilter && statusFilter !== 'all') params.append('status_filter', statusFilter);
-      const url = `/api/v1/attendance/export?${params.toString()}`;
-      window.open(url, '_blank');
-    } catch {
-      toast.error('Failed to export report');
+      setIsExporting(true);
+      toast.info('Downloading attendance CSV report from database...');
+      const params: Record<string, unknown> = {};
+      if (dateFilter) params.date = dateFilter;
+      if (deptFilter && deptFilter !== 'all') params.department_id = deptFilter;
+      if (subjectFilter && subjectFilter !== 'all') params.subject_id = subjectFilter;
+      if (statusFilter && statusFilter !== 'all') params.status_filter = statusFilter;
+
+      const blob = await api.raw.download('/attendance/export', params);
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `attendance_export_${dateFilter || 'report'}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      toast.success('CSV report downloaded successfully!');
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to export attendance report');
+    } finally {
+      setIsExporting(false);
     }
   };
 
   const records = recordsData?.items || [];
   const sessions = sessionsData?.items || [];
+
 
   return (
     <div className="space-y-6">
@@ -250,8 +296,9 @@ export default function AdminAttendancePage() {
         description="Create live class sessions, generate dynamic QR codes, track real-time scans, auto-mark absent students, and view low-attendance analytics."
       >
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleExportCsv} className="glass-button cursor-pointer">
-            <Download className="h-4 w-4 mr-1.5" /> Export CSV
+          <Button variant="outline" size="sm" onClick={handleExportCsv} disabled={isExporting} className="glass-button cursor-pointer">
+            {isExporting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Download className="h-4 w-4 mr-1.5" />}
+            Export CSV
           </Button>
           <Button size="sm" onClick={() => setIsCreateOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md border border-primary/30 cursor-pointer text-xs font-semibold">
             <Plus className="h-4 w-4 mr-1.5" /> Create Session
@@ -319,14 +366,15 @@ export default function AdminAttendancePage() {
             <Clock className="h-4 w-4 text-primary" /> Attendance Sessions Overview
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="ghost" onClick={() => refetchSessions()} className="h-7 text-xs cursor-pointer">
-              <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
+            <Button size="sm" variant="ghost" onClick={handleRefreshAll} disabled={isRefreshing} className="h-7 text-xs cursor-pointer">
+              <RefreshCw className={`h-3.5 w-3.5 mr-1 ${isRefreshing ? 'animate-spin' : ''}`} /> Refresh
             </Button>
             <Button size="sm" onClick={() => setIsCreateOpen(true)} className="h-7 text-xs bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm border border-primary/30 cursor-pointer font-semibold">
               <Plus className="h-3.5 w-3.5 mr-1" /> Create Session
             </Button>
           </div>
         </CardHeader>
+
         <CardContent className="space-y-3 text-xs pt-0">
           {!sessions.length ? (
             <div className="p-6 text-center space-y-3 bg-muted/10 rounded-xl border border-dashed border-border/60 flex flex-col items-center justify-center">
@@ -600,8 +648,14 @@ export default function AdminAttendancePage() {
                 {subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
               </SelectContent>
             </Select>
+            {(search || dateFilter || (deptFilter && deptFilter !== 'all') || (statusFilter && statusFilter !== 'all') || (subjectFilter && subjectFilter !== 'all')) && (
+              <Button size="sm" variant="ghost" onClick={handleResetFilters} className="h-8 text-xs text-rose-500 hover:text-rose-600 cursor-pointer">
+                Clear Filters
+              </Button>
+            )}
           </div>
         </CardHeader>
+
         <CardContent className="p-0">
           {loadingRecords ? (
             <div className="p-8 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
