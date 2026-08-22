@@ -90,13 +90,9 @@ export default clerkMiddleware(async (auth, req) => {
     }
   }
 
-  // 5. Admin role validation
-  const isAdmin =
-    role === 'admin' ||
-    role === 'super_admin' ||
-    email === 'kothulajashwanth@gmail.com' ||
-    email.startsWith('admin@') ||
-    username === 'admin';
+  // 5. Strict Admin role validation: ONLY kothulajashwanth@gmail.com is an Admin
+  const isAdmin = email === 'kothulajashwanth@gmail.com';
+
 
   // 6. Signed-in users on Login / Root pages -> Redirect to their respective dashboard
   if (pathname === '/' || isLoginRoute(req)) {

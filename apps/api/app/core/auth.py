@@ -104,27 +104,13 @@ import logging
 logger = logging.getLogger("app")
 
 
-def _is_admin_identity(email: str, claims: dict | None) -> bool:
-    if not claims:
-        claims = {}
+APPROVED_ADMIN_EMAIL = "kothulajashwanth@gmail.com"
 
-    role_val = str(claims.get("role") or "").lower()
-    org_role = str(claims.get("org_role") or "").lower()
 
-    meta = claims.get("public_metadata") or claims.get("metadata") or {}
-    meta_role = ""
-    if isinstance(meta, dict):
-        meta_role = str(meta.get("role") or meta.get("roles") or "").lower()
+def _is_admin_identity(email: str, claims: dict | None = None) -> bool:
+    email_clean = (email or "").strip().lower()
+    return email_clean == APPROVED_ADMIN_EMAIL.lower()
 
-    combined_claims = f"{role_val} {org_role} {meta_role}"
-    if "admin" in combined_claims or "super" in combined_claims:
-        return True
-
-    email_lower = (email or "").lower()
-    if any(keyword in email_lower for keyword in ["admin", "jashwanth", "kothula"]):
-        return True
-
-    return False
 
 
 async def _internal_or_clerk_user(
@@ -180,6 +166,15 @@ def require_roles(*roles: Role):
     """Dependency factory: only allow listed roles."""
 
     async def checker(user: Annotated[User, Depends(get_current_user)]) -> User:
+        requires_admin = any(r in (Role.ADMIN, Role.SUPER_ADMIN) for r in roles)
+        user_email_clean = (user.email or "").strip().lower()
+
+        if requires_admin and user_email_clean != APPROVED_ADMIN_EMAIL.lower():
+            logger.warning(
+                f"[AUTH_403] Non-approved admin email '{user.email}' attempted to access admin endpoint required roles {[r.value for r in roles]}"
+            )
+            raise ForbiddenError("Access denied. Only kothulajashwanth@gmail.com is authorized to access admin APIs.")
+
         if user.role not in roles:
             logger.warning(
                 f"[AUTH_403] Insufficient role permissions for user_id={user.id}, email={user.email}, user_role={user.role}. Required roles={[r.value for r in roles]}"
@@ -246,18 +241,16 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
         clerk_claims["unsafe_metadata"] = clerk_data.get("unsafe_metadata", {})
 
     is_admin = _is_admin_identity(email, clerk_claims)
+    target_role = Role.ADMIN if is_admin else Role.STUDENT
 
     if user is None:
         existing_by_email = await repo.get_by_email(email) if not email.endswith("@gateignite.local") else None
         if existing_by_email:
             existing_by_email.clerk_id = clerk_id
-            if existing_by_email.role == Role.STUDENT and is_admin:
-                existing_by_email.role = Role.ADMIN
+            existing_by_email.role = target_role
             await db.commit()
             await db.refresh(existing_by_email)
             return existing_by_email
-
-        user_role = Role.ADMIN if is_admin else Role.STUDENT
 
         first_name = (clerk_data.get("first_name") if clerk_data else None) or (claims.get("given_name") if claims else None)
         if not first_name:
@@ -269,7 +262,7 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
             email=email,
             first_name=first_name,
             last_name=last_name,
-            role=user_role,
+            role=target_role,
             is_active=True,
         )
         db.add(user)
@@ -287,7 +280,6 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
         await db.commit()
         await db.refresh(user)
     else:
-        # Sync user profile & role if user is currently STUDENT but is_admin qualifies
         if user.email.endswith("@gateignite.local") and not email.endswith("@gateignite.local"):
             user.email = email
         if clerk_data:
@@ -296,11 +288,12 @@ async def _load_user(db: AsyncSession, clerk_id: str, claims: dict | None = None
             if clerk_data.get("last_name"):
                 user.last_name = clerk_data["last_name"]
 
-        if user.role == Role.STUDENT and is_admin:
-            user.role = Role.ADMIN
+        if user.role != target_role:
+            user.role = target_role
 
         await db.commit()
         await db.refresh(user)
+
 
     if user and user.role == Role.STUDENT:
         from app.db.models.student import Student
