@@ -202,6 +202,38 @@ export default function AdminAttendancePage() {
     onError: (e: Error) => toast.error(e.message || 'Failed to save attendance'),
   });
 
+  // Shared Session Creation Handler
+  const handleOpenCreateModal = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!sessionDate) setSessionDate(new Date().toISOString().split('T')[0]);
+    if (!startTime) setStartTime(new Date().toISOString().substring(0, 16));
+    if (!endTime) setEndTime(new Date(Date.now() + 3600000).toISOString().substring(0, 16));
+    setIsCreateOpen(true);
+  };
+
+  const handleCreateSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    let duration = 60;
+    if (startTime && endTime) {
+      const diff = Math.max(15, Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000));
+      if (!isNaN(diff) && diff > 0) duration = diff;
+    }
+
+    createMutation.mutate({
+      title: title.trim() || 'Class Attendance Session',
+      subjectId: subjectId || undefined,
+      departmentId: departmentId || undefined,
+      semesterId: semesterId || undefined,
+      sectionId: sectionId || undefined,
+      sessionDate,
+      startTime,
+      durationMinutes: duration,
+    });
+  };
+
   // Mutations
   const createMutation = useMutation({
     mutationFn: (payload: any) => api.post('/attendance/sessions', payload),
@@ -213,6 +245,7 @@ export default function AdminAttendancePage() {
       setDepartmentId('');
       setSemesterId('');
       setSectionId('');
+
       refetchSessions();
       refetchSummary();
       queryClient.invalidateQueries({ queryKey: ['attendance-summary'] });
@@ -300,7 +333,7 @@ export default function AdminAttendancePage() {
             {isExporting ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Download className="h-4 w-4 mr-1.5" />}
             Export CSV
           </Button>
-          <Button size="sm" onClick={() => setIsCreateOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md border border-primary/30 cursor-pointer text-xs font-semibold">
+          <Button type="button" size="sm" onClick={handleOpenCreateModal} className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md border border-primary/30 cursor-pointer text-xs font-semibold">
             <Plus className="h-4 w-4 mr-1.5" /> Create Session
           </Button>
         </div>
@@ -369,7 +402,7 @@ export default function AdminAttendancePage() {
             <Button size="sm" variant="ghost" onClick={handleRefreshAll} disabled={isRefreshing} className="h-7 text-xs cursor-pointer">
               <RefreshCw className={`h-3.5 w-3.5 mr-1 ${isRefreshing ? 'animate-spin' : ''}`} /> Refresh
             </Button>
-            <Button size="sm" onClick={() => setIsCreateOpen(true)} className="h-7 text-xs bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm border border-primary/30 cursor-pointer font-semibold">
+            <Button type="button" size="sm" onClick={handleOpenCreateModal} className="h-7 text-xs bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm border border-primary/30 cursor-pointer font-semibold">
               <Plus className="h-3.5 w-3.5 mr-1" /> Create Session
             </Button>
           </div>
@@ -380,13 +413,15 @@ export default function AdminAttendancePage() {
             <div className="p-6 text-center space-y-3 bg-muted/10 rounded-xl border border-dashed border-border/60 flex flex-col items-center justify-center">
               <p className="text-muted-foreground text-xs font-medium">No attendance sessions created yet.</p>
               <Button
+                type="button"
                 size="sm"
-                onClick={() => setIsCreateOpen(true)}
+                onClick={handleOpenCreateModal}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md border border-primary/30 cursor-pointer text-xs font-semibold px-4 py-2 transition-all flex items-center justify-center"
               >
                 <Plus className="h-3.5 w-3.5 mr-1.5" /> Create First Session
               </Button>
             </div>
+
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {sessions.map((s) => {
@@ -759,12 +794,12 @@ export default function AdminAttendancePage() {
 
       {/* Create Session Dialog */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="glass-modal max-w-md">
+        <DialogContent className="glass-modal max-w-md z-50">
           <DialogHeader>
             <DialogTitle>Create Attendance Session</DialogTitle>
             <DialogDescription>Setup a new class or lecture session for live student QR attendance tracking.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 text-xs">
+          <form onSubmit={handleCreateSubmit} className="space-y-4 text-xs">
             <div className="space-y-1">
               <Label>Session Title *</Label>
               <Input
@@ -772,6 +807,7 @@ export default function AdminAttendancePage() {
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="e.g. Operating Systems Lecture 12"
                 className="glass-input"
+                required
               />
             </div>
 
@@ -787,9 +823,9 @@ export default function AdminAttendancePage() {
               </div>
 
               <div className="space-y-1">
-                <Label>Department</Label>
+                <Label>Department / Batch</Label>
                 <Select value={departmentId} onValueChange={setDepartmentId}>
-                  <SelectTrigger className="glass-input text-xs"><SelectValue placeholder="All Depts" /></SelectTrigger>
+                  <SelectTrigger className="glass-input text-xs"><SelectValue placeholder="All Batches" /></SelectTrigger>
                   <SelectContent className="glass-modal">
                     {departments.map((d) => <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>)}
                   </SelectContent>
@@ -800,48 +836,33 @@ export default function AdminAttendancePage() {
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label>Date *</Label>
-                <Input type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} className="glass-input text-xs" />
+                <Input type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} className="glass-input text-xs" required />
               </div>
               <div className="space-y-1">
                 <Label>Start Time *</Label>
-                <Input type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="glass-input text-xs" />
+                <Input type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="glass-input text-xs" required />
               </div>
               <div className="space-y-1">
                 <Label>End Time *</Label>
-                <Input type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="glass-input text-xs" />
+                <Input type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="glass-input text-xs" required />
               </div>
             </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-            <Button
-              type="button"
-              className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md border border-primary/30 cursor-pointer text-xs font-semibold"
-              disabled={createMutation.isPending}
-              onClick={() => {
-                let duration = 60;
-                if (startTime && endTime) {
-                  const diff = Math.max(15, Math.floor((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000));
-                  if (!isNaN(diff) && diff > 0) duration = diff;
-                }
-                createMutation.mutate({
-                  title: title.trim() || 'Class Attendance Session',
-                  subjectId: subjectId || undefined,
-                  departmentId: departmentId || undefined,
-                  semesterId: semesterId || undefined,
-                  sectionId: sectionId || undefined,
-                  sessionDate,
-                  startTime,
-                  durationMinutes: duration,
-                });
-              }}
-            >
-              {createMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Create Session
-            </Button>
-          </DialogFooter>
+
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+              <Button
+                type="submit"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-md border border-primary/30 cursor-pointer text-xs font-semibold"
+                disabled={createMutation.isPending}
+              >
+                {createMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Create Session
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
+
 
       {/* Dynamic Live QR Modal */}
       {activeQrSession && (
