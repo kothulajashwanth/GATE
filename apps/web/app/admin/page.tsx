@@ -49,24 +49,16 @@ export default function AdminDashboard() {
         api.get<Paginated<unknown>>('/students', { page_size: 1, page: 1 }),
         api.get<Paginated<unknown>>('/exams', { page_size: 1, page: 1 }),
         api.get<Paginated<unknown>>('/questions', { page_size: 1, page: 1 }),
-        api.get<Paginated<unknown>>('/attendance/sessions', { status_filter: 'ACTIVE', page_size: 1 }),
-        api.get<any>('/attendance/summary'),
       ]);
 
       const students = results[0].status === 'fulfilled' ? results[0].value : null;
       const exams = results[1].status === 'fulfilled' ? results[1].value : null;
       const questions = results[2].status === 'fulfilled' ? results[2].value : null;
-      const sessions = results[3].status === 'fulfilled' ? results[3].value : null;
-      const summary = results[4].status === 'fulfilled' ? results[4].value : null;
 
       return {
-        totalStudents: students?.total ?? summary?.totalStudents ?? 0,
+        totalStudents: students?.total ?? 0,
         totalExams: exams?.total ?? 0,
         totalQuestions: questions?.total ?? 0,
-        activeSessions: sessions?.total ?? 0,
-        overallAttendance: summary?.overallPercentage ?? 100,
-        totalPresentCount: summary?.totalPresentCount ?? 0,
-        totalAbsentCount: summary?.totalAbsentCount ?? 0,
       };
     },
     enabled: isLoaded && isSignedIn,
@@ -75,13 +67,13 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Admin Examination & Attendance Management Portal"
-        description="Liquid Glass Overview: student roster, examinations, question repository, live proctoring, and attendance tracking."
+        title="Admin Examination Management Portal"
+        description="Liquid Glass Overview: student roster, examinations, question repository, and live proctoring."
       />
 
       {isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4, 5].map((i) => (
+        <div className="grid gap-4 md:grid-cols-3">
+          {[1, 2, 3].map((i) => (
             <Card key={i} className="glass-card">
               <CardContent className="p-6">
                 <div className="animate-pulse space-y-2">
@@ -93,14 +85,13 @@ export default function AdminDashboard() {
           ))}
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-3">
           <StatCard title="Enrolled Students" value={stats?.totalStudents ?? 0} icon={Users} />
           <StatCard title="Total Exams" value={stats?.totalExams ?? 0} icon={FileQuestion} />
           <StatCard title="Question Pool" value={stats?.totalQuestions ?? 0} icon={GraduationCap} />
-          <StatCard title="Active Class Sessions" value={stats?.activeSessions ?? 0} icon={TrendingUp} />
-          <StatCard title="Overall Attendance" value={`${stats?.overallAttendance ?? 100}%`} icon={ShieldCheck} change={`${stats?.totalPresentCount ?? 0} Present / ${stats?.totalAbsentCount ?? 0} Absent`} />
         </div>
       )}
+
 
 
       <div className="grid gap-6 sm:grid-cols-2">

@@ -1,5 +1,4 @@
 from app.db.models.academic import Department, Section, Semester, Topic
-from app.db.models.attendance import AttendanceRecord, AttendanceSession, AttendanceStatus, SessionState
 from app.db.models.audit import AuditLog
 from app.db.models.base import Base
 from app.db.models.exam import Exam, ExamQuestion, ExamSchedule, ExamStatus
@@ -33,8 +32,5 @@ __all__ = [
     "ResultStatus",
     "Notification",
     "AuditLog",
-    "AttendanceSession",
-    "AttendanceRecord",
-    "SessionState",
-    "AttendanceStatus",
 ]
+

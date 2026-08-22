@@ -1,5 +1,4 @@
 from app.db.models.academic import Department, Section, Semester, Topic
-from app.db.models.attendance import AttendanceRecord, AttendanceSession, AttendanceStatus, SessionState
 from app.db.models.audit import AuditLog
 from app.db.models.base import Base, SoftDeleteMixin, TimestampMixin
 from app.db.models.exam import Exam, ExamQuestion, ExamSchedule
@@ -45,8 +44,5 @@ __all__ = [
     "ExamResult",
     "AuditLog",
     "Notification",
-    "AttendanceSession",
-    "AttendanceRecord",
-    "AttendanceStatus",
-    "SessionState",
 ]
+

@@ -94,107 +94,6 @@ function UpcomingExamCard({ exam }: { exam: ExamPreview }) {
   );
 }
 
-function ActiveStudentAttendanceCheckinCard() {
-  const api = useApiClient();
-  const queryClient = useQueryClient();
-
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ['student-active-attendance'],
-    queryFn: () => api.get<any>('/attendance/active'),
-    refetchInterval: 5000,
-  });
-
-  const respondMutation = useMutation({
-    mutationFn: ({ sessionId, status }: { sessionId: string; status: 'PRESENT' | 'ABSENT' }) =>
-      api.post(`/attendance/sessions/${sessionId}/respond`, { status }),
-    onSuccess: (res: any) => {
-      toast.success(`Attendance Recorded! Status: ${res.status}`);
-      refetch();
-      queryClient.invalidateQueries({ queryKey: ['student-attendance-summary'] });
-    },
-    onError: (e: Error) => {
-      toast.error(e.message || 'Failed to submit attendance response.');
-    },
-  });
-
-  if (isLoading || !data?.hasActiveSession || !data?.session) {
-    return null;
-  }
-
-  const { session, myResponse } = data;
-  const remainingMinutes = Math.floor((session.remainingSeconds || 0) / 60);
-  const remainingSecs = (session.remainingSeconds || 0) % 60;
-  const timerStr = `${String(remainingMinutes).padStart(2, '0')}:${String(remainingSecs).padStart(2, '0')}`;
-
-  return (
-    <Card className="glass-card border-2 border-primary/60 bg-primary/5 shadow-xl relative overflow-hidden">
-      <CardContent className="p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-primary/20 pb-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="bg-emerald-600 text-white font-bold text-[11px] px-2.5 py-0.5 rounded-md animate-pulse">
-                🔔 ATTENDANCE IS OPEN
-              </span>
-              <span className="text-xs font-mono text-amber-500 font-bold flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" /> Time Remaining: {timerStr}
-              </span>
-            </div>
-            <h3 className="text-base font-extrabold text-foreground tracking-tight mt-1">
-              {session.subjectName}
-            </h3>
-            <p className="text-xs text-muted-foreground font-medium">
-              Batch: <span className="font-semibold text-foreground">{session.batchName}</span> | Date: {session.sessionDate ? new Date(session.sessionDate).toLocaleDateString() : 'Today'}
-            </p>
-          </div>
-        </div>
-
-        {myResponse ? (
-          <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between">
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2 font-bold text-emerald-600 text-sm">
-                ✓ Attendance Recorded Successfully
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Recorded at: {myResponse.markedAt ? new Date(myResponse.markedAt).toLocaleTimeString() : 'Just now'}
-              </p>
-            </div>
-            <span
-              className={myResponse.status === 'PRESENT' ? 'px-3 py-1 rounded-full bg-emerald-600 text-white font-bold text-xs' : 'px-3 py-1 rounded-full bg-rose-600 text-white font-bold text-xs'}
-            >
-              Status: {myResponse.status}
-            </span>
-          </div>
-        ) : (
-          <div className="space-y-3 pt-1">
-            <p className="text-xs font-semibold text-foreground">
-              Please check in your attendance status for this live class session:
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button
-                size="sm"
-                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-5 py-2 cursor-pointer shadow-md flex-1 sm:flex-initial"
-                disabled={respondMutation.isPending}
-                onClick={() => respondMutation.mutate({ sessionId: session.id, status: 'PRESENT' })}
-              >
-                ✓ MARK PRESENT
-              </Button>
-              <Button
-                size="sm"
-                variant="destructive"
-                className="font-bold px-5 py-2 cursor-pointer shadow-md flex-1 sm:flex-initial"
-                disabled={respondMutation.isPending}
-                onClick={() => respondMutation.mutate({ sessionId: session.id, status: 'ABSENT' })}
-              >
-                ✕ MARK ABSENT
-              </Button>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 export default function StudentDashboard() {
   const api = useApiClient();
   const { isLoaded, isSignedIn } = useAuth();
@@ -224,11 +123,10 @@ export default function StudentDashboard() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Student Examination & Attendance Dashboard"
-        description="View available scheduled exams, launch proctored sessions, check in to active attendance sessions, and track performance results."
+        title="Student Examination Dashboard"
+        description="View available scheduled exams, launch proctored sessions, and track performance results."
       />
 
-      <ActiveStudentAttendanceCheckinCard />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
 
