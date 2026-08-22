@@ -477,21 +477,47 @@ export default function AdminAttendancePage() {
                       >
                         <Users className="h-3 w-3 mr-1" /> {selectedSessionForRoster?.id === s.id ? 'Active Roster' : 'Mark Batch Attendance'}
                       </Button>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-col gap-1.5">
                         {s.status === 'DRAFT' && (
-                          <Button size="sm" variant="outline" className="h-7 text-xs w-full glass-button" onClick={() => activateMutation.mutate(s.id)}>
-                            <Play className="h-3 w-3 mr-1 text-emerald-600" /> Activate & Display QR
-                          </Button>
+                          <div className="flex items-center gap-1.5">
+                            <Button size="sm" variant="outline" className="h-7 text-xs flex-1 glass-button" onClick={() => activateMutation.mutate(s.id)}>
+                              <Play className="h-3 w-3 mr-1 text-emerald-600" /> Activate Session
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs flex-1 glass-button"
+                              onClick={() => {
+                                const link = `${window.location.origin}/student/attendance?session=${s.id}`;
+                                navigator.clipboard.writeText(link);
+                                toast.success('Attendance check-in link copied to clipboard!');
+                              }}
+                            >
+                              <Send className="h-3 w-3 mr-1 text-primary" /> Copy Link
+                            </Button>
+                          </div>
                         )}
                         {s.status === 'ACTIVE' && (
-                          <>
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs flex-1 glass-button"
+                              onClick={() => {
+                                const link = `${window.location.origin}/student/attendance?session=${s.id}`;
+                                navigator.clipboard.writeText(link);
+                                toast.success('Attendance check-in link copied to clipboard!');
+                              }}
+                            >
+                              <Send className="h-3 w-3 mr-1 text-primary" /> Copy Link
+                            </Button>
                             <Button size="sm" className="h-7 text-xs flex-1 glass-button bg-primary text-white" onClick={() => setActiveQrSession(s)}>
                               <QrCode className="h-3 w-3 mr-1" /> Display QR
                             </Button>
                             <Button size="sm" variant="destructive" className="h-7 text-xs flex-1" onClick={() => closeMutation.mutate(s.id)}>
                               <Lock className="h-3 w-3 mr-1" /> End Session
                             </Button>
-                          </>
+                          </div>
                         )}
                         {s.status === 'CLOSED' && (
                           <Badge variant="outline" className="w-full justify-center text-[10px] py-1 bg-muted/40 text-muted-foreground font-semibold">
@@ -499,6 +525,7 @@ export default function AdminAttendancePage() {
                           </Badge>
                         )}
                       </div>
+
                     </div>
                   </div>
                 );

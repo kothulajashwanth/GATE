@@ -40,11 +40,14 @@ function ActiveStudentAttendanceCheckinCard() {
   const api = useApiClient();
   const queryClient = useQueryClient();
 
+  const sessionIdFromUrl = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('session') : null;
+
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['student-active-attendance-page'],
-    queryFn: () => api.get<any>('/attendance/active'),
+    queryKey: ['student-active-attendance-page', sessionIdFromUrl],
+    queryFn: () => api.get<any>('/attendance/active', sessionIdFromUrl ? { session_id: sessionIdFromUrl } : undefined),
     refetchInterval: 5000,
   });
+
 
   const respondMutation = useMutation({
     mutationFn: ({ sessionId, status }: { sessionId: string; status: 'PRESENT' | 'ABSENT' }) =>

@@ -706,6 +706,7 @@ async def bulk_save_session_attendance(
 async def get_active_student_session(
     user: Annotated[User, Depends(require_roles(Role.STUDENT, Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
+    session_id: str | None = None,
 ) -> dict:
     student = await _student_or_404(db, user)
 
@@ -724,10 +725,13 @@ async def get_active_student_session(
         .order_by(AttendanceSession.created_at.desc())
     )
 
-    if student.department_id:
+    if session_id:
+        sess_stmt = sess_stmt.where(AttendanceSession.id == session_id)
+    elif student.department_id:
         sess_stmt = sess_stmt.where(
             (AttendanceSession.department_id == student.department_id) | (AttendanceSession.department_id.is_(None))
         )
+
 
     res = await db.execute(sess_stmt)
     active_sessions = res.scalars().all()
