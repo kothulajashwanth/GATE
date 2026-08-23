@@ -151,29 +151,40 @@ async def list_questions(
     is_verified: bool | None = None,
 ) -> PaginatedResponse[QuestionOut]:
     logger.info(f"[QUESTIONS] REQUEST RECEIVED: page={page}, page_size={page_size}")
-    logger.info(f"[QUESTIONS] AUTHENTICATION PASSED: user_id={actor.id}, email={actor.email}, role={actor.role}")
-    logger.info("[QUESTIONS] STARTING DATABASE QUERY")
-    base = select(Question).where(Question.deleted_at.is_(None)).options(selectinload(Question.versions)).order_by(Question.created_at.desc())
-    if search:
-        base = base.where(Question.text.ilike(f"%{search}%"))
-    if question_type:
-        base = base.where(Question.type == QuestionType(question_type.lower()))
-    if difficulty:
-        base = base.where(Question.difficulty == Difficulty(difficulty.lower()))
-    if subject_id:
-        base = base.where(Question.subject_id == subject_id)
-    if topic:
-        base = base.where(Question.topic.ilike(f"%{topic}%"))
-    if source_file_id:
-        base = base.where(Question.source_file_id == source_file_id)
-    if is_verified is not None:
-        base = base.where(Question.is_verified == is_verified)
 
-    total = int((await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one())
-    result = await db.execute(base.limit(page_size).offset((page - 1) * page_size))
+    conditions = [Question.deleted_at.is_(None)]
+    if search:
+        conditions.append(Question.text.ilike(f"%{search}%"))
+    if question_type:
+        conditions.append(Question.type == QuestionType(question_type.lower()))
+    if difficulty:
+        conditions.append(Question.difficulty == Difficulty(difficulty.lower()))
+    if subject_id:
+        conditions.append(Question.subject_id == subject_id)
+    if topic:
+        conditions.append(Question.topic.ilike(f"%{topic}%"))
+    if source_file_id:
+        conditions.append(Question.source_file_id == source_file_id)
+    if is_verified is not None:
+        conditions.append(Question.is_verified == is_verified)
+
+    count_stmt = select(func.count(Question.id)).where(*conditions)
+    total_res = await db.execute(count_stmt)
+    total = total_res.scalar() or 0
+
+    query = (
+        select(Question)
+        .where(*conditions)
+        .options(selectinload(Question.versions))
+        .order_by(Question.created_at.desc())
+        .limit(page_size)
+        .offset((page - 1) * page_size)
+    )
+    result = await db.execute(query)
     items = [_question_out(q) for q in result.scalars().all()]
     total_pages = (total + page_size - 1) // page_size if total else 0
     return PaginatedResponse(items=items, page=page, pageSize=page_size, total=total, totalPages=total_pages)
+
 
 
 async def _get_question_or_404(db: AsyncSession, question_id: str) -> Question:

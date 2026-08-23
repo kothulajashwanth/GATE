@@ -129,10 +129,10 @@ export default function AdminAttendancePage() {
   });
 
   const { data: subjects } = useQuery<Subject[]>({
-    queryKey: ['questions', 'subjects'],
+    queryKey: ['question-bank', 'subjects'],
     queryFn: async () => {
       try {
-        const res = await api.get<any>('/questions/subjects');
+        const res = await api.get<any>('/question-bank/subjects');
         return Array.isArray(res) ? res : res.items || [];
       } catch {
         return [];
@@ -140,6 +140,7 @@ export default function AdminAttendancePage() {
     },
     enabled: isLoaded && isSignedIn,
   });
+
 
   // Fetch list of attendance sessions
   const { data: sessions, isLoading: loadingSessions, refetch: refetchSessions } = useQuery<SessionStats[]>({
