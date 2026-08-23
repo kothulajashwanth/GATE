@@ -86,10 +86,11 @@ export default function AdminDashboard() {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-3">
-          <StatCard title="Enrolled Students" value={stats?.totalStudents ?? 0} icon={Users} />
+          <StatCard title="Total Students" value={stats?.totalStudents ?? 0} icon={Users} />
           <StatCard title="Total Exams" value={stats?.totalExams ?? 0} icon={FileQuestion} />
           <StatCard title="Question Pool" value={stats?.totalQuestions ?? 0} icon={GraduationCap} />
         </div>
+
       )}
 
 
