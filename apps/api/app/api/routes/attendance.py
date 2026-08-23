@@ -1,11 +1,10 @@
 import csv
-from datetime import date, datetime, timezone, timedelta
+from datetime import date, datetime, timezone
 from io import StringIO
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -34,24 +33,27 @@ router = APIRouter()
 
 
 async def _get_session_with_relations(db: AsyncSession, session_id: str) -> AttendanceSession | None:
-    res = await db.execute(
-        select(AttendanceSession)
-        .options(
-            selectinload(AttendanceSession.subject),
-            selectinload(AttendanceSession.department),
-            selectinload(AttendanceSession.semester),
-            selectinload(AttendanceSession.section),
-            selectinload(AttendanceSession.records),
+    try:
+        res = await db.execute(
+            select(AttendanceSession)
+            .options(
+                selectinload(AttendanceSession.subject),
+                selectinload(AttendanceSession.department),
+                selectinload(AttendanceSession.semester),
+                selectinload(AttendanceSession.section),
+                selectinload(AttendanceSession.records),
+            )
+            .where(AttendanceSession.id == session_id, AttendanceSession.deleted_at.is_(None))
         )
-        .where(AttendanceSession.id == session_id, AttendanceSession.deleted_at.is_(None))
-    )
-    return res.scalars().first()
+        return res.scalars().first()
+    except Exception:
+        return None
 
 
 def _format_session_stats(s: AttendanceSession, total_batch_students: int) -> dict:
     records = s.records or []
-    present_cnt = len([r for r in records if r.status in (AttendanceStatus.PRESENT, AttendanceStatus.LATE)])
-    absent_cnt = len([r for r in records if r.status == AttendanceStatus.ABSENT])
+    present_cnt = len([r for r in records if str(r.status) in (AttendanceStatus.PRESENT, AttendanceStatus.LATE, "PRESENT", "LATE")])
+    absent_cnt = len([r for r in records if str(r.status) in (AttendanceStatus.ABSENT, "ABSENT")])
     total_cnt = max(total_batch_students, present_cnt + absent_cnt)
     pending_cnt = max(0, total_cnt - (present_cnt + absent_cnt))
     pct = round((present_cnt / total_cnt * 100), 1) if total_cnt > 0 else 0.0
@@ -59,6 +61,8 @@ def _format_session_stats(s: AttendanceSession, total_batch_students: int) -> di
     dept_name = s.department.name if s.department else "All Depts"
     sem_name = s.semester.name if s.semester else "All Semesters"
     sec_name = s.section.name if s.section else "All Sections"
+
+    status_str = str(s.status.value) if hasattr(s.status, "value") else str(s.status)
 
     return {
         "id": str(s.id),
@@ -74,7 +78,7 @@ def _format_session_stats(s: AttendanceSession, total_batch_students: int) -> di
         "date": s.date,
         "start_time": s.start_time,
         "duration_minutes": s.duration_minutes,
-        "status": s.status,
+        "status": status_str,
         "created_at": s.created_at,
         "total_students": total_cnt,
         "present_count": present_cnt,
@@ -105,26 +109,26 @@ async def create_session(
     if not title:
         title = f"{subject.name} Attendance"
 
+    dept_id = payload.department_id if (payload.department_id and str(payload.department_id).strip()) else None
+    sem_id = payload.semester_id if (payload.semester_id and str(payload.semester_id).strip()) else None
+    sec_id = payload.section_id if (payload.section_id and str(payload.section_id).strip()) else None
 
-    dept_id = payload.department_id if (payload.department_id and payload.department_id.strip()) else None
-    sem_id = payload.semester_id if (payload.semester_id and payload.semester_id.strip()) else None
-    sec_id = payload.section_id if (payload.section_id and payload.section_id.strip()) else None
+    session_status = str(payload.status.value) if hasattr(payload.status, "value") else (str(payload.status) if payload.status else SessionState.ACTIVE)
 
     session = AttendanceSession(
         title=title,
-        subject_id=str(subject.id),
+        subject_id=subject.id,
         department_id=dept_id,
         semester_id=sem_id,
         section_id=sec_id,
         date=payload.date or date.today(),
         start_time=payload.start_time or "09:00",
         duration_minutes=payload.duration_minutes or 60,
-        status=payload.status or SessionState.ACTIVE,
-        created_by=str(actor.id),
+        status=session_status,
+        created_by=actor.id,
     )
     db.add(session)
     await db.commit()
-
 
     full_session = await _get_session_with_relations(db, str(session.id))
     
@@ -140,7 +144,7 @@ async def create_session(
     cnt_res = await db.execute(stu_q)
     total_batch_students = cnt_res.scalar() or 0
 
-    return _format_session_stats(full_session, total_batch_students)
+    return _format_session_stats(full_session or session, total_batch_students)
 
 
 @router.get("/sessions", response_model=list[AttendanceSessionResponse], summary="List attendance sessions")
@@ -164,8 +168,8 @@ async def list_sessions(
         .order_by(AttendanceSession.created_at.desc())
     )
 
-    if status_filter and status_filter.upper() in SessionState.__members__:
-        q = q.where(AttendanceSession.status == SessionState(status_filter.upper()))
+    if status_filter:
+        q = q.where(AttendanceSession.status == status_filter.upper())
     if subject_id:
         q = q.where(AttendanceSession.subject_id == subject_id)
     if department_id:
@@ -173,6 +177,8 @@ async def list_sessions(
 
     res = await db.execute(q)
     sessions = res.scalars().all()
+    if not sessions:
+        return []
 
     out = []
     for s in sessions:
@@ -221,7 +227,7 @@ async def get_session_detail(
     stu_res = await db.execute(stu_q)
     students = stu_res.scalars().all()
 
-    record_map = {r.student_id: r for r in (session.records or [])}
+    record_map = {str(r.student_id): r for r in (session.records or [])}
 
     roster_items = []
     for st in students:
@@ -232,7 +238,7 @@ async def get_session_detail(
         batch_str = " - ".join(filter(None, [dept_code, sem_code, sec_code])) or "General"
 
         name = st.user.full_name if st.user else st.roll_number
-        st_status = rec.status.value if rec else "PENDING"
+        st_status = str(rec.status) if rec else "PENDING"
         marked_at = rec.marked_at if rec else None
 
         roster_items.append(
@@ -278,13 +284,13 @@ async def close_session(
     stu_res = await db.execute(stu_q)
     students = stu_res.scalars().all()
 
-    existing_student_ids = {r.student_id for r in (session.records or [])}
+    existing_student_ids = {str(r.student_id) for r in (session.records or [])}
     for st in students:
         st_id = str(st.id)
         if st_id not in existing_student_ids:
             rec = AttendanceRecord(
-                session_id=str(session.id),
-                student_id=st_id,
+                session_id=session.id,
+                student_id=st.id,
                 status=AttendanceStatus.ABSENT,
                 remarks="Auto-marked ABSENT on session closure",
             )
@@ -292,7 +298,7 @@ async def close_session(
 
     await db.commit()
     session = await _get_session_with_relations(db, session_id)
-    return _format_session_stats(session, len(students))
+    return _format_session_stats(session or session, len(students))
 
 
 @router.get("/sessions/{session_id}/export", summary="Export attendance CSV")
@@ -364,17 +370,18 @@ async def get_student_active_session(
         # Check if student already submitted attendance for this session
         rec_res = await db.execute(
             select(AttendanceRecord).where(
-                AttendanceRecord.session_id == str(sess.id),
-                AttendanceRecord.student_id == str(student.id),
+                AttendanceRecord.session_id == sess.id,
+                AttendanceRecord.student_id == student.id,
                 AttendanceRecord.deleted_at.is_(None),
             )
         )
         existing_rec = rec_res.scalars().first()
 
         already_submitted = existing_rec is not None
-        submitted_status = existing_rec.status.value if existing_rec else None
+        submitted_status = str(existing_rec.status) if existing_rec else None
 
         if not already_submitted:
+            status_str = str(sess.status.value) if hasattr(sess.status, "value") else str(sess.status)
             return {
                 "id": str(sess.id),
                 "title": sess.title,
@@ -383,7 +390,7 @@ async def get_student_active_session(
                 "date": sess.date,
                 "start_time": sess.start_time,
                 "duration_minutes": sess.duration_minutes,
-                "status": sess.status,
+                "status": status_str,
                 "already_submitted": False,
                 "submitted_status": None,
             }
@@ -411,7 +418,7 @@ async def submit_student_attendance(
     if not sess:
         raise NotFoundError("Attendance session not found")
 
-    if sess.status != SessionState.ACTIVE:
+    if str(sess.status) != SessionState.ACTIVE:
         raise BadRequestError("This attendance session is no longer active")
 
     # Verify student belongs to session batch
@@ -423,18 +430,20 @@ async def submit_student_attendance(
     # Check for duplicate submission
     dup_res = await db.execute(
         select(AttendanceRecord).where(
-            AttendanceRecord.session_id == payload.session_id,
-            AttendanceRecord.student_id == str(student.id),
+            AttendanceRecord.session_id == sess.id,
+            AttendanceRecord.student_id == student.id,
             AttendanceRecord.deleted_at.is_(None),
         )
     )
     if dup_res.scalars().first():
         raise BadRequestError("Attendance already submitted for this session")
 
+    submit_status = str(payload.status.value) if hasattr(payload.status, "value") else str(payload.status)
+
     record = AttendanceRecord(
-        session_id=payload.session_id,
-        student_id=str(student.id),
-        status=payload.status,
+        session_id=sess.id,
+        student_id=student.id,
+        status=submit_status,
         remarks=payload.remarks or "Submitted by student",
     )
     db.add(record)
@@ -473,14 +482,14 @@ async def get_student_attendance_history(
         .options(
             selectinload(AttendanceRecord.session).selectinload(AttendanceSession.subject)
         )
-        .where(AttendanceRecord.student_id == str(student.id), AttendanceRecord.deleted_at.is_(None))
+        .where(AttendanceRecord.student_id == student.id, AttendanceRecord.deleted_at.is_(None))
         .order_by(AttendanceRecord.marked_at.desc())
     )
     records = rec_res.scalars().all()
 
     total_sessions = len(records)
-    present_cnt = len([r for r in records if r.status in (AttendanceStatus.PRESENT, AttendanceStatus.LATE)])
-    absent_cnt = len([r for r in records if r.status == AttendanceStatus.ABSENT])
+    present_cnt = len([r for r in records if str(r.status) in (AttendanceStatus.PRESENT, AttendanceStatus.LATE, "PRESENT", "LATE")])
+    absent_cnt = len([r for r in records if str(r.status) in (AttendanceStatus.ABSENT, "ABSENT")])
     overall_pct = round((present_cnt / total_sessions * 100), 1) if total_sessions > 0 else 0.0
 
     # Group by subject
@@ -501,17 +510,19 @@ async def get_student_attendance_history(
                 "absent_count": 0,
             }
         subj_map[subj_id]["total_sessions"] += 1
-        if r.status in (AttendanceStatus.PRESENT, AttendanceStatus.LATE):
+        if str(r.status) in (AttendanceStatus.PRESENT, AttendanceStatus.LATE, "PRESENT", "LATE"):
             subj_map[subj_id]["present_count"] += 1
         else:
             subj_map[subj_id]["absent_count"] += 1
+
+        status_str = str(r.status.value) if hasattr(r.status, "value") else str(r.status)
 
         formatted_records.append({
             "id": str(r.id),
             "session_id": str(r.session_id),
             "subject_name": subj_name,
             "date": str(sess.date) if sess else str(r.marked_at.date()),
-            "status": r.status.value,
+            "status": status_str,
             "marked_at": r.marked_at.isoformat(),
         })
 
