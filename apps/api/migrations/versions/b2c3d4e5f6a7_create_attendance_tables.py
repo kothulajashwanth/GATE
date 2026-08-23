@@ -32,7 +32,7 @@ def upgrade() -> None:
             sa.Column('department_id', sa.Uuid(), nullable=True),
             sa.Column('semester_id', sa.Uuid(), nullable=True),
             sa.Column('section_id', sa.Uuid(), nullable=True),
-            sa.Column('date', sa.Date(), nullable=False),
+            sa.Column('date', sa.Date(), nullable=False, server_default=sa.text('CURRENT_DATE')),
             sa.Column('start_time', sa.String(length=10), nullable=False, server_default='09:00'),
             sa.Column('duration_minutes', sa.Integer(), nullable=False, server_default='60'),
             sa.Column('status', sa.String(length=50), nullable=False, server_default='ACTIVE'),
@@ -52,6 +52,35 @@ def upgrade() -> None:
         op.create_index(op.f('ix_attendance_sessions_section_id'), 'attendance_sessions', ['section_id'], unique=False)
         op.create_index(op.f('ix_attendance_sessions_semester_id'), 'attendance_sessions', ['semester_id'], unique=False)
         op.create_index(op.f('ix_attendance_sessions_subject_id'), 'attendance_sessions', ['subject_id'], unique=False)
+    else:
+        # Table exists - safely add any missing columns without dropping existing data
+        cols = {c['name'] for c in inspector.get_columns('attendance_sessions')}
+        if 'title' not in cols:
+            op.add_column('attendance_sessions', sa.Column('title', sa.String(length=255), nullable=False, server_default='Attendance Session'))
+        if 'subject_id' not in cols:
+            op.add_column('attendance_sessions', sa.Column('subject_id', sa.Uuid(), nullable=True))
+        if 'department_id' not in cols:
+            op.add_column('attendance_sessions', sa.Column('department_id', sa.Uuid(), nullable=True))
+        if 'semester_id' not in cols:
+            op.add_column('attendance_sessions', sa.Column('semester_id', sa.Uuid(), nullable=True))
+        if 'section_id' not in cols:
+            op.add_column('attendance_sessions', sa.Column('section_id', sa.Uuid(), nullable=True))
+        if 'date' not in cols:
+            op.add_column('attendance_sessions', sa.Column('date', sa.Date(), nullable=False, server_default=sa.text('CURRENT_DATE')))
+        if 'start_time' not in cols:
+            op.add_column('attendance_sessions', sa.Column('start_time', sa.String(length=10), nullable=False, server_default='09:00'))
+        if 'duration_minutes' not in cols:
+            op.add_column('attendance_sessions', sa.Column('duration_minutes', sa.Integer(), nullable=False, server_default='60'))
+        if 'status' not in cols:
+            op.add_column('attendance_sessions', sa.Column('status', sa.String(length=50), nullable=False, server_default='ACTIVE'))
+        if 'created_by' not in cols:
+            op.add_column('attendance_sessions', sa.Column('created_by', sa.Uuid(), nullable=True))
+        if 'created_at' not in cols:
+            op.add_column('attendance_sessions', sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False))
+        if 'updated_at' not in cols:
+            op.add_column('attendance_sessions', sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False))
+        if 'deleted_at' not in cols:
+            op.add_column('attendance_sessions', sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True))
 
     # 2. attendance_records
     if 'attendance_records' not in existing_tables:
@@ -74,14 +103,26 @@ def upgrade() -> None:
         op.create_index(op.f('ix_attendance_records_deleted_at'), 'attendance_records', ['deleted_at'], unique=False)
         op.create_index(op.f('ix_attendance_records_session_id'), 'attendance_records', ['session_id'], unique=False)
         op.create_index(op.f('ix_attendance_records_student_id'), 'attendance_records', ['student_id'], unique=False)
+    else:
+        # Table exists - safely add any missing columns without dropping existing data
+        rec_cols = {c['name'] for c in inspector.get_columns('attendance_records')}
+        if 'session_id' not in rec_cols:
+            op.add_column('attendance_records', sa.Column('session_id', sa.Uuid(), nullable=True))
+        if 'student_id' not in rec_cols:
+            op.add_column('attendance_records', sa.Column('student_id', sa.Uuid(), nullable=True))
+        if 'status' not in rec_cols:
+            op.add_column('attendance_records', sa.Column('status', sa.String(length=50), nullable=False, server_default='PRESENT'))
+        if 'remarks' not in rec_cols:
+            op.add_column('attendance_records', sa.Column('remarks', sa.String(length=255), nullable=True))
+        if 'marked_at' not in rec_cols:
+            op.add_column('attendance_records', sa.Column('marked_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False))
+        if 'created_at' not in rec_cols:
+            op.add_column('attendance_records', sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False))
+        if 'updated_at' not in rec_cols:
+            op.add_column('attendance_records', sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False))
+        if 'deleted_at' not in rec_cols:
+            op.add_column('attendance_records', sa.Column('deleted_at', sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    existing_tables = set(inspector.get_table_names())
-
-    if 'attendance_records' in existing_tables:
-        op.drop_table('attendance_records')
-    if 'attendance_sessions' in existing_tables:
-        op.drop_table('attendance_sessions')
+    pass
