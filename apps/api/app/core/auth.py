@@ -28,7 +28,17 @@ async def _verify_clerk_token(token: str) -> dict:
         jwks_url = f"{settings.clerk_issuer.rstrip('/')}/.well-known/jwks.json"
 
     if not jwks_url:
-        jwks_url = "https://artistic-wahoo-83.clerk.accounts.dev/.well-known/jwks.json"
+        try:
+            unverified_claims = jwt.get_unverified_claims(token)
+            iss = unverified_claims.get("iss")
+            if iss and isinstance(iss, str) and iss.startswith("http"):
+                jwks_url = f"{iss.rstrip('/')}/.well-known/jwks.json"
+        except Exception:
+            pass
+
+    if not jwks_url:
+        jwks_url = "https://clerk.com/.well-known/jwks.json"
+
 
     try:
         key = await _get_jwks_key(jwks_url)
