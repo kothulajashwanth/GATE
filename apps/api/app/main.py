@@ -15,21 +15,9 @@ setup_logging(settings.log_level)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Auto-initialize database tables on application startup
-    try:
-        import logging
-        from app.db.base import Base
-        from app.db.session import engine
-
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logging.info("[DB] Database schema verified and tables created successfully.")
-    except Exception as e:
-        import logging
-        logging.error(f"[DB_ERROR] Table initialization warning: {e}", exc_info=True)
-
     yield
     await close_redis()
+
 
 
 app = FastAPI(

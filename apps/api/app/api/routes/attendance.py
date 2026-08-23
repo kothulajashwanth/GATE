@@ -180,53 +180,46 @@ async def list_sessions(
     subject_id: Optional[str] = Query(None),
     department_id: Optional[str] = Query(None),
 ) -> list[dict]:
-    try:
-        q = (
-            select(AttendanceSession)
-            .options(
-                selectinload(AttendanceSession.subject),
-                selectinload(AttendanceSession.department),
-                selectinload(AttendanceSession.semester),
-                selectinload(AttendanceSession.section),
-                selectinload(AttendanceSession.records),
-            )
-            .where(AttendanceSession.deleted_at.is_(None))
-            .order_by(AttendanceSession.created_at.desc())
+    q = (
+        select(AttendanceSession)
+        .options(
+            selectinload(AttendanceSession.subject),
+            selectinload(AttendanceSession.department),
+            selectinload(AttendanceSession.semester),
+            selectinload(AttendanceSession.section),
+            selectinload(AttendanceSession.records),
         )
+        .where(AttendanceSession.deleted_at.is_(None))
+        .order_by(AttendanceSession.created_at.desc())
+    )
 
-        if status_filter:
-            q = q.where(AttendanceSession.status == status_filter.upper())
-        if subject_id:
-            q = q.where(AttendanceSession.subject_id == subject_id)
-        if department_id:
-            q = q.where(AttendanceSession.department_id == department_id)
+    if status_filter:
+        q = q.where(AttendanceSession.status == status_filter.upper())
+    if subject_id:
+        q = q.where(AttendanceSession.subject_id == subject_id)
+    if department_id:
+        q = q.where(AttendanceSession.department_id == department_id)
 
-        res = await db.execute(q)
-        sessions = res.scalars().all()
-        if not sessions:
-            return []
-
-        out = []
-        for s in sessions:
-            try:
-                stu_q = select(func.count(Student.id)).where(Student.deleted_at.is_(None))
-                if s.department_id:
-                    stu_q = stu_q.where(Student.department_id == s.department_id)
-                if s.semester_id:
-                    stu_q = stu_q.where(Student.semester_id == s.semester_id)
-                if s.section_id:
-                    stu_q = stu_q.where(Student.section_id == s.section_id)
-                cnt_res = await db.execute(stu_q)
-                batch_cnt = cnt_res.scalar() or 0
-            except Exception:
-                batch_cnt = 0
-            out.append(_format_session_stats(s, batch_cnt))
-
-        return out
-    except Exception as exc:
-        import logging
-        logging.error(f"[ATTENDANCE_LIST_ERROR] {exc}", exc_info=True)
+    res = await db.execute(q)
+    sessions = res.scalars().all()
+    if not sessions:
         return []
+
+    out = []
+    for s in sessions:
+        stu_q = select(func.count(Student.id)).where(Student.deleted_at.is_(None))
+        if s.department_id:
+            stu_q = stu_q.where(Student.department_id == s.department_id)
+        if s.semester_id:
+            stu_q = stu_q.where(Student.semester_id == s.semester_id)
+        if s.section_id:
+            stu_q = stu_q.where(Student.section_id == s.section_id)
+        cnt_res = await db.execute(stu_q)
+        batch_cnt = cnt_res.scalar() or 0
+        out.append(_format_session_stats(s, batch_cnt))
+
+    return out
+
 
 
 
