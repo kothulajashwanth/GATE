@@ -94,6 +94,8 @@ function UpcomingExamCard({ exam }: { exam: ExamPreview }) {
   );
 }
 
+import { ActiveStudentAttendanceCheckinCard } from '@/components/active-student-attendance-checkin-card';
+
 export default function StudentDashboard() {
   const api = useApiClient();
   const { isLoaded, isSignedIn } = useAuth();
@@ -127,8 +129,10 @@ export default function StudentDashboard() {
         description="View available scheduled exams, launch proctored sessions, and track performance results."
       />
 
+      <ActiveStudentAttendanceCheckinCard />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+
 
         <StatCard title="Available Exams" value={exams.length} icon={FileQuestion} href="/student/exams/upcoming" />
         <StatCard title="Exams Completed" value={results.length} icon={CheckCircle} href="/student/results" />
