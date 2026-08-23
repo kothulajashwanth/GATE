@@ -80,7 +80,7 @@ export default function AdminAttendancePage() {
   const [semId, setSemId] = useState<string>('');
   const [secId, setSecId] = useState<string>('');
   const [subjectId, setSubjectId] = useState<string>('');
-  const [sessionDate, setSessionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [sessionDate, setSessionDate] = useState<string>(new Date().toISOString().split('T')[0] ?? '');
   const [startTime, setStartTime] = useState<string>('09:00');
   const [duration, setDuration] = useState<number>(60);
 
@@ -148,7 +148,8 @@ export default function AdminAttendancePage() {
     enabled: isLoaded && isSignedIn,
   });
 
-  const activeSessionId = selectedSessionId || (sessions && sessions.length > 0 ? sessions[0].id : null);
+  const firstSession = sessions && sessions.length > 0 ? sessions[0] : null;
+  const activeSessionId = selectedSessionId || (firstSession ? firstSession.id : null);
 
   // Fetch detail for selected session
   const { data: sessionDetail, isLoading: loadingDetail, refetch: refetchDetail } = useQuery<SessionDetailResponse | null>({
@@ -213,7 +214,7 @@ export default function AdminAttendancePage() {
     }
   };
 
-  const currentStats = sessionDetail?.session || (sessions && sessions.length > 0 ? sessions[0] : null);
+  const currentStats = sessionDetail?.session || firstSession;
   const currentRoster = sessionDetail?.records || [];
 
   const filteredRoster = currentRoster.filter((st) => {
@@ -230,16 +231,15 @@ export default function AdminAttendancePage() {
       <PageHeader
         title="Admin Attendance Portal"
         description="Create real-time attendance check-in sessions, view student rosters, monitor present/absent counts, and export attendance records."
-        action={
-          <Button
-            size="sm"
-            onClick={() => setCreateModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer shadow-lg transition-all duration-150"
-          >
-            <Plus className="h-4 w-4 mr-1.5" /> Create Session
-          </Button>
-        }
-      />
+      >
+        <Button
+          size="sm"
+          onClick={() => setCreateModalOpen(true)}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs cursor-pointer shadow-lg transition-all duration-150"
+        >
+          <Plus className="h-4 w-4 mr-1.5" /> Create Session
+        </Button>
+      </PageHeader>
 
       {/* Sessions Overview Cards & Selection */}
       <div className="grid gap-4 md:grid-cols-5">
@@ -276,7 +276,7 @@ export default function AdminAttendancePage() {
                     key={sess.id}
                     onClick={() => setSelectedSessionId(sess.id)}
                     className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all ${
-                      (selectedSessionId || sessions[0].id) === sess.id
+                      activeSessionId === sess.id
                         ? 'border-primary bg-primary/10 font-bold text-foreground'
                         : 'border-border/40 hover:bg-white/10 dark:hover:bg-slate-800/40 text-muted-foreground'
                     }`}
@@ -293,6 +293,7 @@ export default function AdminAttendancePage() {
               </div>
             )}
           </CardContent>
+
         </Card>
 
         {/* Live Attendance Stat Counters */}
