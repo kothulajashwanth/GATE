@@ -94,24 +94,48 @@ async def create_session(
     actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
-    subj_res = await db.execute(select(Subject).where(Subject.id == payload.subject_id))
-    subject = subj_res.scalars().first()
+    subject = None
+    if payload.subject_id:
+        try:
+            subj_res = await db.execute(select(Subject).where(Subject.id == payload.subject_id))
+            subject = subj_res.scalars().first()
+        except Exception:
+            pass
+
     if not subject:
-        first_sub = await db.execute(select(Subject).where(Subject.deleted_at.is_(None)))
-        subject = first_sub.scalars().first()
-        if not subject:
-            subject = Subject(code="CS", name="Computer Science and Information Technology", description="GATE CS Paper")
-            db.add(subject)
-            await db.commit()
-            await db.refresh(subject)
+        subj_res = await db.execute(select(Subject).where(Subject.deleted_at.is_(None)))
+        subject = subj_res.scalars().first()
+
+    if not subject:
+        raise NotFoundError("Subject not found")
 
     title = payload.title
     if not title:
         title = f"{subject.name} Attendance"
 
-    dept_id = payload.department_id if (payload.department_id and str(payload.department_id).strip()) else None
-    sem_id = payload.semester_id if (payload.semester_id and str(payload.semester_id).strip()) else None
-    sec_id = payload.section_id if (payload.section_id and str(payload.section_id).strip()) else None
+    dept_id = None
+    if payload.department_id and str(payload.department_id).strip():
+        try:
+            dept_res = await db.execute(select(Department.id).where(Department.id == payload.department_id))
+            dept_id = dept_res.scalar_one_or_none()
+        except Exception:
+            dept_id = None
+
+    sem_id = None
+    if payload.semester_id and str(payload.semester_id).strip():
+        try:
+            sem_res = await db.execute(select(Semester.id).where(Semester.id == payload.semester_id))
+            sem_id = sem_res.scalar_one_or_none()
+        except Exception:
+            sem_id = None
+
+    sec_id = None
+    if payload.section_id and str(payload.section_id).strip():
+        try:
+            sec_res = await db.execute(select(Section.id).where(Section.id == payload.section_id))
+            sec_id = sec_res.scalar_one_or_none()
+        except Exception:
+            sec_id = None
 
     session_status = str(payload.status.value) if hasattr(payload.status, "value") else (str(payload.status) if payload.status else SessionState.ACTIVE)
 
@@ -145,6 +169,7 @@ async def create_session(
     total_batch_students = cnt_res.scalar() or 0
 
     return _format_session_stats(full_session or session, total_batch_students)
+
 
 
 @router.get("/sessions", response_model=list[AttendanceSessionResponse], summary="List attendance sessions")
