@@ -142,6 +142,13 @@ export default function AdminAttendancePage() {
   });
 
 
+  // Auto-select first subject when subjects list loads
+  useEffect(() => {
+    if (subjects && subjects.length > 0 && !subjectId) {
+      setSubjectId(subjects[0].id);
+    }
+  }, [subjects, subjectId]);
+
   // Fetch list of attendance sessions
   const { data: sessions, isLoading: loadingSessions, refetch: refetchSessions } = useQuery<SessionStats[]>({
     queryKey: ['admin', 'attendance-sessions', isLoaded, isSignedIn],
@@ -163,17 +170,18 @@ export default function AdminAttendancePage() {
   // Create Session Mutation
   const createMutation = useMutation({
     mutationFn: async () => {
-      if (!subjectId) {
+      const targetSubjectId = subjectId || (subjects && subjects.length > 0 ? subjects[0].id : '');
+      if (!targetSubjectId) {
         throw new Error('Please select a subject');
       }
       return api.post<SessionStats>('/attendance/sessions', {
-        subject_id: subjectId,
+        subject_id: targetSubjectId,
         department_id: deptId || undefined,
         semester_id: semId || undefined,
         section_id: secId || undefined,
-        date: sessionDate,
-        start_time: startTime,
-        duration_minutes: duration,
+        date: sessionDate || new Date().toISOString().split('T')[0],
+        start_time: startTime || '09:00',
+        duration_minutes: Number(duration) || 60,
         status: 'ACTIVE',
       });
     },
@@ -182,11 +190,14 @@ export default function AdminAttendancePage() {
       setCreateModalOpen(false);
       setSelectedSessionId(newSess.id);
       queryClient.invalidateQueries({ queryKey: ['admin', 'attendance-sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'attendance-session-detail'] });
     },
     onError: (err: any) => {
+      console.error('[CREATE_SESSION_ERROR]', err);
       toast.error(err?.message || 'Failed to create attendance session');
     },
   });
+
 
   // End Session Mutation
   const endSessionMutation = useMutation({
@@ -599,9 +610,10 @@ export default function AdminAttendancePage() {
             </Button>
             <Button
               onClick={() => createMutation.mutate()}
-              disabled={createMutation.isPending || !subjectId}
+              disabled={createMutation.isPending}
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs"
             >
+
               {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
               Create Session
             </Button>

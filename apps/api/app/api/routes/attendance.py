@@ -106,12 +106,16 @@ async def create_session(
         title = f"{subject.name} Attendance"
 
 
+    dept_id = payload.department_id if (payload.department_id and payload.department_id.strip()) else None
+    sem_id = payload.semester_id if (payload.semester_id and payload.semester_id.strip()) else None
+    sec_id = payload.section_id if (payload.section_id and payload.section_id.strip()) else None
+
     session = AttendanceSession(
         title=title,
-        subject_id=payload.subject_id,
-        department_id=payload.department_id,
-        semester_id=payload.semester_id,
-        section_id=payload.section_id,
+        subject_id=str(subject.id),
+        department_id=dept_id,
+        semester_id=sem_id,
+        section_id=sec_id,
         date=payload.date or date.today(),
         start_time=payload.start_time or "09:00",
         duration_minutes=payload.duration_minutes or 60,
@@ -120,6 +124,7 @@ async def create_session(
     )
     db.add(session)
     await db.commit()
+
 
     full_session = await _get_session_with_relations(db, str(session.id))
     
