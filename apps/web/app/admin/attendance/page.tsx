@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, Button, Input, Select, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@examshield/ui';
+
 import { Users, CheckCircle2, XCircle, Clock, Percent, Plus, RefreshCw, Download, Search, Filter, Layers, BookOpen, ShieldCheck, Loader2 } from 'lucide-react';
 import { PageHeader } from '@/components/page-header';
 import { useAuth } from '@clerk/nextjs';
@@ -144,8 +145,9 @@ export default function AdminAttendancePage() {
 
   // Auto-select first subject when subjects list loads
   useEffect(() => {
-    if (subjects && subjects.length > 0 && !subjectId) {
-      setSubjectId(subjects[0].id);
+    const firstSubId = subjects?.[0]?.id;
+    if (firstSubId && !subjectId) {
+      setSubjectId(firstSubId);
     }
   }, [subjects, subjectId]);
 
@@ -156,7 +158,7 @@ export default function AdminAttendancePage() {
     enabled: isLoaded && isSignedIn,
   });
 
-  const firstSession = sessions && sessions.length > 0 ? sessions[0] : null;
+  const firstSession = sessions?.[0] ?? null;
   const activeSessionId = selectedSessionId || (firstSession ? firstSession.id : null);
 
   // Fetch detail for selected session
@@ -170,10 +172,11 @@ export default function AdminAttendancePage() {
   // Create Session Mutation
   const createMutation = useMutation({
     mutationFn: async () => {
-      const targetSubjectId = subjectId || (subjects && subjects.length > 0 ? subjects[0].id : '');
+      const targetSubjectId = subjectId || subjects?.[0]?.id || '';
       if (!targetSubjectId) {
         throw new Error('Please select a subject');
       }
+
       return api.post<SessionStats>('/attendance/sessions', {
         subject_id: targetSubjectId,
         department_id: deptId || undefined,
