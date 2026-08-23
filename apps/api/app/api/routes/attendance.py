@@ -52,8 +52,8 @@ async def _get_session_with_relations(db: AsyncSession, session_id: str) -> Atte
 
 def _format_session_stats(s: AttendanceSession, total_batch_students: int) -> dict:
     records = s.records or []
-    present_cnt = len([r for r in records if str(r.status) in (AttendanceStatus.PRESENT, AttendanceStatus.LATE, "PRESENT", "LATE")])
-    absent_cnt = len([r for r in records if str(r.status) in (AttendanceStatus.ABSENT, "ABSENT")])
+    present_cnt = len([r for r in records if str(r.status).upper() in (AttendanceStatus.PRESENT.value, AttendanceStatus.LATE.value, "PRESENT", "LATE")])
+    absent_cnt = len([r for r in records if str(r.status).upper() in (AttendanceStatus.ABSENT.value, "ABSENT")])
     total_cnt = max(total_batch_students, present_cnt + absent_cnt)
     pending_cnt = max(0, total_cnt - (present_cnt + absent_cnt))
     pct = round((present_cnt / total_cnt * 100), 1) if total_cnt > 0 else 0.0
@@ -62,7 +62,7 @@ def _format_session_stats(s: AttendanceSession, total_batch_students: int) -> di
     sem_name = s.semester.name if s.semester else "All Semesters"
     sec_name = s.section.name if s.section else "All Sections"
 
-    status_str = str(s.status.value) if hasattr(s.status, "value") else str(s.status)
+    status_str = (str(s.status.value) if hasattr(s.status, "value") else str(s.status or "ACTIVE")).upper()
 
     return {
         "id": str(s.id),
@@ -75,17 +75,18 @@ def _format_session_stats(s: AttendanceSession, total_batch_students: int) -> di
         "semester_name": sem_name,
         "section_id": str(s.section_id) if s.section_id else None,
         "section_name": sec_name,
-        "date": s.date,
-        "start_time": s.start_time,
-        "duration_minutes": s.duration_minutes,
+        "date": s.date or date.today(),
+        "start_time": s.start_time or "09:00",
+        "duration_minutes": s.duration_minutes or 60,
         "status": status_str,
-        "created_at": s.created_at,
+        "created_at": s.created_at or datetime.now(timezone.utc),
         "total_students": total_cnt,
         "present_count": present_cnt,
         "absent_count": absent_cnt,
         "pending_count": pending_cnt,
         "attendance_percentage": pct,
     }
+
 
 
 @router.post("/sessions", response_model=AttendanceSessionResponse, summary="Create attendance session")

@@ -29,11 +29,11 @@ class AttendanceSessionResponse(BaseModel):
     semester_name: Optional[str] = None
     section_id: Optional[str] = None
     section_name: Optional[str] = None
-    date: date
-    start_time: str
-    duration_minutes: int
-    status: SessionState
-    created_at: datetime
+    date: Optional[date] = None
+    start_time: Optional[str] = "09:00"
+    duration_minutes: Optional[int] = 60
+    status: str = "ACTIVE"
+    created_at: Optional[datetime] = None
     total_students: int = 0
     present_count: int = 0
     absent_count: int = 0
@@ -58,7 +58,7 @@ class SessionDetailResponse(BaseModel):
 
 class AttendanceSubmitRequest(BaseModel):
     session_id: str
-    status: AttendanceStatus = AttendanceStatus.PRESENT
+    status: str = "PRESENT"
     remarks: Optional[str] = None
 
 
@@ -66,8 +66,8 @@ class AttendanceRecordResponse(BaseModel):
     id: str
     session_id: str
     student_id: str
-    status: AttendanceStatus
-    marked_at: datetime
+    status: str
+    marked_at: Optional[datetime] = None
 
 
 class StudentActiveSessionResponse(BaseModel):
@@ -75,12 +75,13 @@ class StudentActiveSessionResponse(BaseModel):
     title: str
     subject_id: str
     subject_name: str
-    date: date
-    start_time: str
-    duration_minutes: int
-    status: SessionState
+    date: Optional[date] = None
+    start_time: Optional[str] = "09:00"
+    duration_minutes: Optional[int] = 60
+    status: str = "ACTIVE"
     already_submitted: bool = False
     submitted_status: Optional[str] = None
+
 
 
 class SubjectAttendancePercentage(BaseModel):
