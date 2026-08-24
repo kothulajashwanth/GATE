@@ -202,10 +202,14 @@ export default function AdminAttendancePage() {
         status: 'ACTIVE',
       });
     },
-    onSuccess: (newSess) => {
+    onSuccess: (newSess: SessionStats) => {
       toast.success('Attendance session created successfully');
       setCreateModalOpen(false);
       setSelectedSessionId(newSess.id);
+      queryClient.setQueryData<SessionStats[]>(['admin', 'attendance-sessions'], (old = []) => {
+        const filtered = (Array.isArray(old) ? old : []).filter((s) => s.id !== newSess.id);
+        return [newSess, ...filtered];
+      });
       queryClient.invalidateQueries({ queryKey: ['admin', 'attendance-sessions'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'attendance-session-detail'] });
     },

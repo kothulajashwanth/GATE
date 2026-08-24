@@ -1,6 +1,7 @@
 import csv
 from datetime import date, datetime, timezone
 from io import StringIO
+import logging
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -29,6 +30,7 @@ from app.schemas.attendance import (
     SubjectAttendancePercentage,
 )
 
+logger = logging.getLogger("app.attendance")
 router = APIRouter()
 
 
@@ -46,40 +48,53 @@ async def _get_session_with_relations(db: AsyncSession, session_id: str) -> Atte
             .where(AttendanceSession.id == session_id, AttendanceSession.deleted_at.is_(None))
         )
         return res.scalars().first()
-    except Exception:
+    except Exception as e:
+        logger.error(f"[ATTENDANCE] Error in _get_session_with_relations for session_id={session_id}: {e}", exc_info=True)
         return None
 
 
 def _format_session_stats(s: AttendanceSession, total_batch_students: int) -> dict:
-    records = s.records or []
-    present_cnt = len([r for r in records if str(r.status).upper() in (AttendanceStatus.PRESENT.value, AttendanceStatus.LATE.value, "PRESENT", "LATE")])
-    absent_cnt = len([r for r in records if str(r.status).upper() in (AttendanceStatus.ABSENT.value, "ABSENT")])
+    records = getattr(s, "records", []) or []
+    present_cnt = len([r for r in records if str(getattr(r, "status", "")).upper() in (AttendanceStatus.PRESENT.value, AttendanceStatus.LATE.value, "PRESENT", "LATE")])
+    absent_cnt = len([r for r in records if str(getattr(r, "status", "")).upper() in (AttendanceStatus.ABSENT.value, "ABSENT")])
     total_cnt = max(total_batch_students, present_cnt + absent_cnt)
     pending_cnt = max(0, total_cnt - (present_cnt + absent_cnt))
     pct = round((present_cnt / total_cnt * 100), 1) if total_cnt > 0 else 0.0
 
-    dept_name = s.department.name if s.department else "All Depts"
-    sem_name = s.semester.name if s.semester else "All Semesters"
-    sec_name = s.section.name if s.section else "All Sections"
+    dept = getattr(s, "department", None)
+    dept_name = dept.name if dept else "All Depts"
 
-    status_str = (str(s.status.value) if hasattr(s.status, "value") else str(s.status or "ACTIVE")).upper()
+    sem = getattr(s, "semester", None)
+    sem_name = sem.name if sem else "All Semesters"
+
+    sec = getattr(s, "section", None)
+    sec_name = sec.name if sec else "All Sections"
+
+    subj = getattr(s, "subject", None)
+    subject_name = subj.name if subj else "Unknown Subject"
+
+    status_val = getattr(s, "status", "ACTIVE")
+    status_str = (str(status_val.value) if hasattr(status_val, "value") else str(status_val or "ACTIVE")).upper()
+
+    s_date = getattr(s, "date", None) or date.today()
+    s_created = getattr(s, "created_at", None) or datetime.now(timezone.utc)
 
     return {
         "id": str(s.id),
-        "title": s.title,
+        "title": getattr(s, "title", "Attendance Session"),
         "subject_id": str(s.subject_id),
-        "subject_name": s.subject.name if s.subject else "Unknown Subject",
-        "department_id": str(s.department_id) if s.department_id else None,
+        "subject_name": subject_name,
+        "department_id": str(s.department_id) if getattr(s, "department_id", None) else None,
         "department_name": dept_name,
-        "semester_id": str(s.semester_id) if s.semester_id else None,
+        "semester_id": str(s.semester_id) if getattr(s, "semester_id", None) else None,
         "semester_name": sem_name,
-        "section_id": str(s.section_id) if s.section_id else None,
+        "section_id": str(s.section_id) if getattr(s, "section_id", None) else None,
         "section_name": sec_name,
-        "date": s.date or date.today(),
-        "start_time": s.start_time or "09:00",
-        "duration_minutes": s.duration_minutes or 60,
+        "date": s_date,
+        "start_time": getattr(s, "start_time", "09:00") or "09:00",
+        "duration_minutes": getattr(s, "duration_minutes", 60) or 60,
         "status": status_str,
-        "created_at": s.created_at or datetime.now(timezone.utc),
+        "created_at": s_created,
         "total_students": total_cnt,
         "present_count": present_cnt,
         "absent_count": absent_cnt,
@@ -104,6 +119,14 @@ async def create_session(
             pass
 
     if not subject:
+        subj_res = await db.execute(select(Subject).where(Subject.deleted_at.is_(None)))
+        subject = subj_res.scalars().first()
+
+    if not subject:
+        from app.api.routes.question_bank import GATE_SUBJECTS
+        for g_sub in GATE_SUBJECTS:
+            db.add(Subject(code=g_sub["code"], name=g_sub["name"], description=g_sub["description"]))
+        await db.commit()
         subj_res = await db.execute(select(Subject).where(Subject.deleted_at.is_(None)))
         subject = subj_res.scalars().first()
 
