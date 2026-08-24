@@ -152,10 +152,24 @@ export default function AdminAttendancePage() {
   }, [subjects, subjectId]);
 
   // Fetch list of attendance sessions
-  const { data: sessions, isLoading: loadingSessions, refetch: refetchSessions } = useQuery<SessionStats[]>({
-    queryKey: ['admin', 'attendance-sessions', isLoaded, isSignedIn],
-    queryFn: () => api.get<SessionStats[]>('/attendance/sessions'),
-    enabled: isLoaded && isSignedIn,
+  const {
+    data: sessions = [],
+    isLoading: loadingSessions,
+    isError: isSessionsError,
+    refetch: refetchSessions,
+  } = useQuery<SessionStats[]>({
+    queryKey: ['admin', 'attendance-sessions'],
+    queryFn: async () => {
+      const res = await api.get<SessionStats[] | { sessions?: SessionStats[]; items?: SessionStats[]; data?: SessionStats[] }>('/attendance/sessions');
+      if (Array.isArray(res)) return res;
+      if (res && typeof res === 'object') {
+        if (Array.isArray(res.sessions)) return res.sessions;
+        if (Array.isArray(res.items)) return res.items;
+        if (Array.isArray(res.data)) return res.data;
+      }
+      return [];
+    },
+    enabled: Boolean(isLoaded && isSignedIn),
   });
 
   const firstSession = sessions?.[0] ?? null;
@@ -165,7 +179,7 @@ export default function AdminAttendancePage() {
   const { data: sessionDetail, isLoading: loadingDetail, refetch: refetchDetail } = useQuery<SessionDetailResponse | null>({
     queryKey: ['admin', 'attendance-session-detail', activeSessionId],
     queryFn: () => (activeSessionId ? api.get<SessionDetailResponse>(`/attendance/sessions/${activeSessionId}`) : null),
-    enabled: !!activeSessionId,
+    enabled: Boolean(activeSessionId && isLoaded && isSignedIn),
     refetchInterval: 10000,
   });
 
@@ -277,6 +291,13 @@ export default function AdminAttendancePage() {
             </div>
             {loadingSessions ? (
               <div className="p-4 text-center text-xs text-muted-foreground">Loading sessions...</div>
+            ) : isSessionsError ? (
+              <div className="p-4 text-center space-y-2">
+                <p className="text-xs text-rose-500">Failed to load sessions.</p>
+                <Button size="sm" variant="outline" onClick={() => refetchSessions()} className="w-full text-xs">
+                  Retry
+                </Button>
+              </div>
             ) : !sessions?.length ? (
               <div className="p-4 text-center space-y-2">
                 <p className="text-xs text-muted-foreground">No sessions created yet.</p>
