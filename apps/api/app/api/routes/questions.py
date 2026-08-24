@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, status
@@ -26,8 +27,11 @@ router = APIRouter()
 
 
 class QuestionVersionOut(BaseModel):
+    id: str | None = None
+    questionId: str | None = None
     version: int
     changeSummary: str | None = None
+    changedBy: str | None = None
     createdAt: str
 
 
@@ -97,42 +101,59 @@ logger = logging.getLogger("app")
 
 
 def _question_out(q: Question) -> QuestionOut:
-    versions_out = [
-        QuestionVersionOut(
-            id=str(v.id),
-            questionId=str(v.question_id),
-            version=v.version,
-            text=v.text,
-            options=v.options,
-            correctAnswers=v.correct_answers,
-            explanation=v.explanation,
-            changedBy=str(v.changed_by) if v.changed_by else None,
-            createdAt=v.created_at.isoformat() if v.created_at else datetime.now(UTC).isoformat(),
-        )
-        for v in getattr(q, "versions", [])
-    ]
+    versions_out: list[QuestionVersionOut] = []
+    for v in getattr(q, "versions", []) or []:
+        try:
+            v_created = v.created_at.isoformat() if getattr(v, "created_at", None) else datetime.now(UTC).isoformat()
+            versions_out.append(
+                QuestionVersionOut(
+                    id=str(v.id) if getattr(v, "id", None) else None,
+                    questionId=str(v.question_id) if getattr(v, "question_id", None) else None,
+                    version=v.version if getattr(v, "version", None) is not None else 1,
+                    changeSummary=getattr(v, "change_summary", None),
+                    changedBy=str(v.changed_by) if getattr(v, "changed_by", None) else None,
+                    createdAt=v_created,
+                )
+            )
+        except Exception:
+            pass
+
+    q_type_str = "mcq"
+    if q.type:
+        q_type_str = q.type.value if hasattr(q.type, "value") else str(q.type)
+
+    diff_str = "medium"
+    if q.difficulty:
+        diff_str = q.difficulty.value if hasattr(q.difficulty, "value") else str(q.difficulty)
+
+    bloom_str = None
+    if q.bloom_level:
+        bloom_str = q.bloom_level.value if hasattr(q.bloom_level, "value") else str(q.bloom_level)
+
+    q_created = q.created_at.isoformat() if getattr(q, "created_at", None) else datetime.now(UTC).isoformat()
+
     return QuestionOut(
         id=str(q.id),
-        type=q.type.value if hasattr(q.type, "value") else (str(q.type) if q.type else "mcq"),
-        text=q.text,
-        options=q.options,
-        correctAnswers=q.correct_answers,
+        type=q_type_str,
+        text=q.text or "",
+        options=q.options if isinstance(q.options, list) else None,
+        correctAnswers=q.correct_answers if isinstance(q.correct_answers, list) else ([str(q.correct_answers)] if q.correct_answers else ["A"]),
         explanation=q.explanation,
         hint=q.hint,
-        difficulty=q.difficulty.value if hasattr(q.difficulty, "value") else (str(q.difficulty) if q.difficulty else "medium"),
-        bloomLevel=q.bloom_level.value if hasattr(q.bloom_level, "value") else (str(q.bloom_level) if q.bloom_level else None),
-        tags=q.tags or [],
-        marks=q.marks,
-        negativeMarks=q.negative_marks,
+        difficulty=diff_str,
+        bloomLevel=bloom_str,
+        tags=q.tags if isinstance(q.tags, list) else [],
+        marks=q.marks if q.marks is not None else 1,
+        negativeMarks=q.negative_marks if q.negative_marks is not None else 0.0,
         topic=q.topic,
         subjectId=str(q.subject_id) if q.subject_id else None,
         folderId=str(q.folder_id) if q.folder_id else None,
         sourceFileId=str(q.source_file_id) if q.source_file_id else None,
-        isVerified=q.is_verified,
-        isAiGenerated=q.is_ai_generated,
-        version=q.version,
+        isVerified=bool(q.is_verified),
+        isAiGenerated=bool(q.is_ai_generated),
+        version=q.version if q.version is not None else 1,
         versions=versions_out,
-        createdAt=q.created_at.isoformat() if q.created_at else datetime.now(UTC).isoformat(),
+        createdAt=q_created,
     )
 
 
@@ -171,6 +192,9 @@ async def list_questions(
     count_stmt = select(func.count(Question.id)).where(*conditions)
     total_res = await db.execute(count_stmt)
     total = total_res.scalar() or 0
+
+    if total == 0:
+        return PaginatedResponse(items=[], page=page, pageSize=page_size, total=0, totalPages=0)
 
     query = (
         select(Question)
@@ -327,8 +351,6 @@ async def delete_question(
     actor: Annotated[User, Depends(require_roles(Role.ADMIN, Role.SUPER_ADMIN))],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    from datetime import UTC, datetime
-
     q = await _get_question_or_404(db, question_id)
     q.deleted_at = datetime.now(UTC)
     await AuditService.log(
