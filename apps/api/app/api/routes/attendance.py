@@ -2,7 +2,8 @@ import csv
 from datetime import date, datetime, timezone
 from io import StringIO
 import logging
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -34,8 +35,22 @@ logger = logging.getLogger("app.attendance")
 router = APIRouter()
 
 
+def _safe_uuid(val: Any) -> UUID | None:
+    if not val:
+        return None
+    if isinstance(val, UUID):
+        return val
+    try:
+        return UUID(str(val).strip())
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 async def _get_session_with_relations(db: AsyncSession, session_id: str) -> AttendanceSession | None:
     try:
+        parsed_id = _safe_uuid(session_id)
+        if not parsed_id:
+            return None
         res = await db.execute(
             select(AttendanceSession)
             .options(
@@ -45,7 +60,7 @@ async def _get_session_with_relations(db: AsyncSession, session_id: str) -> Atte
                 selectinload(AttendanceSession.section),
                 selectinload(AttendanceSession.records),
             )
-            .where(AttendanceSession.id == session_id, AttendanceSession.deleted_at.is_(None))
+            .where(AttendanceSession.id == parsed_id, AttendanceSession.deleted_at.is_(None))
         )
         return res.scalars().first()
     except Exception as e:
@@ -111,12 +126,10 @@ async def create_session(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     subject = None
-    if payload.subject_id:
-        try:
-            subj_res = await db.execute(select(Subject).where(Subject.id == payload.subject_id))
-            subject = subj_res.scalars().first()
-        except Exception:
-            pass
+    parsed_subj_id = _safe_uuid(payload.subject_id)
+    if parsed_subj_id:
+        subj_res = await db.execute(select(Subject).where(Subject.id == parsed_subj_id, Subject.deleted_at.is_(None)))
+        subject = subj_res.scalars().first()
 
     if not subject:
         subj_res = await db.execute(select(Subject).where(Subject.deleted_at.is_(None)))
@@ -138,28 +151,22 @@ async def create_session(
         title = f"{subject.name} Attendance"
 
     dept_id = None
-    if payload.department_id and str(payload.department_id).strip():
-        try:
-            dept_res = await db.execute(select(Department.id).where(Department.id == payload.department_id))
-            dept_id = dept_res.scalar_one_or_none()
-        except Exception:
-            dept_id = None
+    parsed_dept = _safe_uuid(payload.department_id)
+    if parsed_dept:
+        dept_res = await db.execute(select(Department.id).where(Department.id == parsed_dept, Department.deleted_at.is_(None)))
+        dept_id = dept_res.scalar_one_or_none()
 
     sem_id = None
-    if payload.semester_id and str(payload.semester_id).strip():
-        try:
-            sem_res = await db.execute(select(Semester.id).where(Semester.id == payload.semester_id))
-            sem_id = sem_res.scalar_one_or_none()
-        except Exception:
-            sem_id = None
+    parsed_sem = _safe_uuid(payload.semester_id)
+    if parsed_sem:
+        sem_res = await db.execute(select(Semester.id).where(Semester.id == parsed_sem, Semester.deleted_at.is_(None)))
+        sem_id = sem_res.scalar_one_or_none()
 
     sec_id = None
-    if payload.section_id and str(payload.section_id).strip():
-        try:
-            sec_res = await db.execute(select(Section.id).where(Section.id == payload.section_id))
-            sec_id = sec_res.scalar_one_or_none()
-        except Exception:
-            sec_id = None
+    parsed_sec = _safe_uuid(payload.section_id)
+    if parsed_sec:
+        sec_res = await db.execute(select(Section.id).where(Section.id == parsed_sec, Section.deleted_at.is_(None)))
+        sec_id = sec_res.scalar_one_or_none()
 
     session_status = str(payload.status.value) if hasattr(payload.status, "value") else (str(payload.status) if payload.status else SessionState.ACTIVE)
 
@@ -219,10 +226,12 @@ async def list_sessions(
 
     if status_filter:
         q = q.where(AttendanceSession.status == status_filter.upper())
-    if subject_id:
-        q = q.where(AttendanceSession.subject_id == subject_id)
-    if department_id:
-        q = q.where(AttendanceSession.department_id == department_id)
+    parsed_sub_filter = _safe_uuid(subject_id)
+    if parsed_sub_filter:
+        q = q.where(AttendanceSession.subject_id == parsed_sub_filter)
+    parsed_dept_filter = _safe_uuid(department_id)
+    if parsed_dept_filter:
+        q = q.where(AttendanceSession.department_id == parsed_dept_filter)
 
     res = await db.execute(q)
     sessions = res.scalars().all()
@@ -460,9 +469,13 @@ async def submit_student_attendance(
     if not student:
         raise ForbiddenError("Student profile not found for current user")
 
+    parsed_sess_id = _safe_uuid(payload.session_id)
+    if not parsed_sess_id:
+        raise NotFoundError("Attendance session not found")
+
     sess_res = await db.execute(
         select(AttendanceSession).where(
-            AttendanceSession.id == payload.session_id, AttendanceSession.deleted_at.is_(None)
+            AttendanceSession.id == parsed_sess_id, AttendanceSession.deleted_at.is_(None)
         )
     )
     sess = sess_res.scalars().first()
